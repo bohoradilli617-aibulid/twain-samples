@@ -55,6 +55,27 @@ void DestroyUI(CTWAIN_UI* pUI);
 
 typedef list<string> lstString;
 
+struct ModalForceUIRequest
+{
+  IntVector                 validPixelTypes;
+  int                       currentPixelTypeIndex;
+  FloatVector               validResolutions;
+  int                       currentResolutionIndex;
+
+  bool                      accepted;
+  std::vector<ScanPageItem> selectedPages;
+  int                       selectedPixelType;
+  float                     selectedDpi;
+
+  ModalForceUIRequest()
+    : currentPixelTypeIndex(-1)
+    , currentResolutionIndex(-1)
+    , accepted(false)
+    , selectedPixelType(-1)
+    , selectedDpi(0.0f)
+  {}
+};
+
 class CTWAIN_UI
 {
 public:
@@ -66,6 +87,13 @@ public:
   * @return a valid TWRC_xxxx return code.
   */
   virtual TW_INT16 DisplayTWAINGUI(TW_USERINTERFACE Data, bool bSetup, bool bIndicators);
+
+  /**
+  * Show the file-picker UI modally when ShowUI == FALSE is overridden via force_ui.
+  * Runs on a dedicated STA Qt UI thread so callers do not need a Win32 message pump.
+  * @return true if the user confirmed scanning with at least one page, false if cancelled.
+  */
+  virtual bool RunModalForceUI(ModalForceUIRequest& request);
 
   /**
   * Close the user interface for TWAIN

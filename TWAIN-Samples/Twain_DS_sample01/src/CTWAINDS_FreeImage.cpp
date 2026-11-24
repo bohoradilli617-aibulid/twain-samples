@@ -49,6 +49,8 @@
 
 #ifdef TWH_CMP_MSC
   #include <Winbase.h>
+  #include <cstdarg>
+  #include <cstdio>
 #endif
 
 // I found that compiling using the sunfreeware.com stuff on Solaris 9
@@ -61,6 +63,57 @@ typedef union {
 #endif
 
 using namespace std;
+
+namespace
+{
+  void writeDsLog(const char* fmt, ...)
+  {
+#ifdef TWH_CMP_MSC
+    char envBuf[PATH_MAX] = {0};
+    DWORD len = ::GetEnvironmentVariableA("LOCALAPPDATA", envBuf, sizeof(envBuf) - 1);
+    if (len == 0 || len >= sizeof(envBuf) - 64)
+    {
+      return;
+    }
+
+    std::string dir(envBuf);
+    dir += "\\VirtualScanner";
+    ::CreateDirectoryA(dir.c_str(), NULL);
+    std::string logPath = dir + "\\scanner.log";
+
+    // Truncate if the log exceeds 128 KB so disk usage stays bounded
+    WIN32_FILE_ATTRIBUTE_DATA attr;
+    const char* mode = "a";
+    if (::GetFileAttributesExA(logPath.c_str(), GetFileExInfoStandard, &attr) &&
+        attr.nFileSizeLow > 131072)
+    {
+      mode = "w";
+    }
+
+    FILE* fp = NULL;
+    if (fopen_s(&fp, logPath.c_str(), mode) != 0 || !fp)
+    {
+      return;
+    }
+
+    SYSTEMTIME st;
+    ::GetLocalTime(&st);
+    fprintf(fp, "%04d-%02d-%02d %02d:%02d:%02d.%03d [pid=%lu tid=%lu] ",
+            st.wYear, st.wMonth, st.wDay,
+            st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
+            ::GetCurrentProcessId(), ::GetCurrentThreadId());
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(fp, fmt, args);
+    va_end(args);
+    fprintf(fp, "\n");
+    fclose(fp);
+#else
+    (void)fmt;
+#endif
+  }
+}
 
 //* Initialize global identity for this DS. */
 TW_IDENTITY CTWAINDS_Base::m_TheIdentity =
@@ -92,7 +145,7 @@ TW_IDENTITY CTWAINDS_Base::m_TheIdentity =
 #ifdef __APPLE__
    "\p"
 #endif
-   "TWAIN Working Group",              // TW_STR32   Manufacturer;     Manufacturer name, e.g. "Hewlett-Packard"
+   "Virtual Scanner Project",          // TW_STR32   Manufacturer;     Manufacturer name, e.g. "Hewlett-Packard"
 #ifdef __APPLE__
    "\p"
 #endif
@@ -100,7 +153,7 @@ TW_IDENTITY CTWAINDS_Base::m_TheIdentity =
 #ifdef __APPLE__
    "\p"
 #endif
-   "TWAIN2 Software Scanner" // TW_STR32   ProductName;      Product name, e.g. "ScanJet Plus"
+   "Windows Virtual Scanner" // TW_STR32   ProductName;      Product name, e.g. "ScanJet Plus"
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1013,6 +1066,8 @@ TW_INT16 CTWAINDS_FreeImage::openDS(pTW_IDENTITY  _pOrigin)
     m_CurrentState = dsState_Open;
   }
 
+  m_Scanner.loadSourceConfig();
+
   return ret;
 }
 
@@ -1036,11 +1091,13 @@ TW_INT16 CTWAINDS_FreeImage::enableDS(pTW_USERINTERFACE _pData)
 {
   if( dsState_Open != m_CurrentState )
   {
+    writeDsLog("enableDS: SEQERROR state=%d", (int)m_CurrentState);
     setConditionCode(TWCC_SEQERROR);
     return TWRC_FAILURE;
   }
   m_CurrentState = dsState_Enabled;
   m_bCanceled = false;
+  m_Scanner.clearSelectedPages();
 
 
   //set pending xfers to whatever the user configured for XferCount
@@ -1058,6 +1115,75 @@ TW_INT16 CTWAINDS_FreeImage::enableDS(pTW_USERINTERFACE _pData)
   // The application will move to state 5 after this triplet which means that
   // no more capabilities can be set until we are brought back to state 4.
   m_Scanner.Lock();
+
+  const bool bForceUI = m_Scanner.isForceUIEnabled();
+  writeDsLog("enableDS: ShowUI=%d ModalUI=%d hParent=%p force_ui=%d xferCount=%d",
+             (int)_pData->ShowUI, (int)_pData->ModalUI, _pData->hParent, bForceUI ? 1 : 0, Count);
+
+  if (FALSE == _pData->ShowUI && bForceUI)
+  {
+    ModalForceUIRequest req;
+    if (const IntVector* pPixelTypes = m_pGUI->GetValidCap(ICAP_PIXELTYPE))
+    {
+      req.validPixelTypes = *pPixelTypes;
+      req.currentPixelTypeIndex = m_pGUI->GetCurrentCapIndex(ICAP_PIXELTYPE);
+    }
+    if (const FloatVector* pResolutions = m_pGUI->GetValidCapFloat(ICAP_XRESOLUTION))
+    {
+      req.validResolutions = *pResolutions;
+      req.currentResolutionIndex = m_pGUI->GetCurrentCapIndex(ICAP_XRESOLUTION);
+    }
+
+    writeDsLog("enableDS: launching modal force_ui picker");
+    bool bAccepted = m_pGUI->RunModalForceUI(req);
+    writeDsLog("enableDS: modal force_ui result accepted=%d pages=%u dpi=%.1f pixelType=%d",
+               bAccepted ? 1 : 0, (unsigned)req.selectedPages.size(), req.selectedDpi, req.selectedPixelType);
+
+    if (!bAccepted || !req.accepted || req.selectedPages.empty())
+    {
+      m_Scanner.clearSelectedPages();
+      m_Scanner.Unlock();
+      m_CurrentState = dsState_Open;
+      return TWRC_CANCEL;
+    }
+
+    if (req.selectedDpi >= 50.0f)
+    {
+      m_pGUI->SetCapValueFloat(ICAP_XRESOLUTION, req.selectedDpi);
+      m_pGUI->SetCapValueFloat(ICAP_YRESOLUTION, req.selectedDpi);
+    }
+    if (req.selectedPixelType >= 0)
+    {
+      m_pGUI->SetCapValueInt(ICAP_PIXELTYPE, req.selectedPixelType);
+    }
+    m_pGUI->SetCapValueInt(CAP_FEEDERENABLED, (req.selectedPages.size() > 1) ? 1 : 0);
+
+    SetSelectedPages(req.selectedPages);
+
+    if (!StartScanning())
+    {
+      writeDsLog("enableDS: StartScanning failed");
+      cerr << "ds: There was an error while trying to get scanner to acquire selected image" << endl;
+      m_Scanner.clearSelectedPages();
+      m_Scanner.Unlock();
+      m_CurrentState = dsState_Open;
+      setConditionCode(TWCC_SEQERROR);
+      return TWRC_FAILURE;
+    }
+
+    if (!DoXferReadyEvent())
+    {
+      writeDsLog("enableDS: DoXferReadyEvent failed");
+      m_Scanner.clearSelectedPages();
+      m_Scanner.Unlock();
+      m_CurrentState = dsState_Open;
+      setConditionCode(TWCC_SEQERROR);
+      return TWRC_FAILURE;
+    }
+
+    writeDsLog("enableDS: modal force_ui ready -> TWRC_SUCCESS (m_Xfers.Count=%d)", (int)m_Xfers.Count);
+    return TWRC_SUCCESS;
+  }
 
   if(FALSE == _pData->ShowUI)
   {    
@@ -1101,11 +1227,13 @@ TW_INT16 CTWAINDS_FreeImage::enableDS(pTW_USERINTERFACE _pData)
   {
     // A user interface is not supported as of right now because we are
     // in text mode.
+    writeDsLog("enableDS: DisplayTWAINGUI failed");
     m_CurrentState = dsState_Open;
     setConditionCode(TWCC_OPERATIONERROR);
     return TWRC_FAILURE;
   }
 
+  writeDsLog("enableDS: DisplayTWAINGUI succeeded -> TWRC_SUCCESS");
   return TWRC_SUCCESS;
 }
 //////////////////////////////////////////////////////////////////////////////
@@ -1132,12 +1260,14 @@ TW_INT16 CTWAINDS_FreeImage::enableDSOnly(pTW_USERINTERFACE _pData)
 //////////////////////////////////////////////////////////////////////////////
 TW_INT16 CTWAINDS_FreeImage::disableDS(pTW_USERINTERFACE _pData)
 {
+  writeDsLog("disableDS: state=%d", (int)m_CurrentState);
   if( dsState_Enabled != m_CurrentState )
   {
     setConditionCode(TWCC_SEQERROR);
     return TWRC_FAILURE;
   }
   m_pGUI->DestroyTWAINGUI();
+  m_Scanner.clearSelectedPages();
 
   // allow the scanners caps to be writeable again because we are moving back
   // to state 4. If this source had a UI, it would be lowered at this time.
@@ -1377,13 +1507,14 @@ TW_INT16 CTWAINDS_FreeImage::endXfer(pTW_PENDINGXFERS _pXfers)
     {
       pbCap->GetCurrent(bAutoFeed);
     }
-    if(bAutoFeed)
+    if(bAutoFeed || m_Scanner.hasSelectedPages())
     {
       // More images are requested, go to scan and try to get the next
       // image in pre-emption of the app asking for it
       if(!m_Scanner.acquireImage())
       {
         cerr << "ds: There was an error while prepping the image for scanning" << endl;
+        m_Xfers.Count = 0;
         setConditionCode(TWCC_BUMMER);
         twrc = TWRC_FAILURE;
       }
@@ -1392,6 +1523,7 @@ TW_INT16 CTWAINDS_FreeImage::endXfer(pTW_PENDINGXFERS _pXfers)
   }
   else
   {
+    m_Scanner.clearSelectedPages();
     m_Scanner.Unlock();
   }
     m_CurrentState = dsState_Enabled;
@@ -1406,6 +1538,8 @@ TW_INT16 CTWAINDS_FreeImage::endXfer(pTW_PENDINGXFERS _pXfers)
 	if(0 != m_Xfers.Count)
 	{
 		m_CurrentState = dsState_XferReady;
+		m_PageNumber++;
+		getImageInfo(&m_ImageInfo);
 	}
   return twrc;
 }
@@ -1445,6 +1579,7 @@ TW_INT16 CTWAINDS_FreeImage::resetXfer(pTW_PENDINGXFERS _pXfers)
 
   m_Xfers.Count = 0;
   m_CurrentState = dsState_Enabled;
+  m_Scanner.clearSelectedPages();
   m_Scanner.Unlock();
 
   if( _pXfers == 0 )
@@ -1973,6 +2108,16 @@ TW_INT16 CTWAINDS_FreeImage::validateCapabilitySet(TW_UINT16 _Cap, TW_UINT16  _C
   return twrc;
 }
 
+void CTWAINDS_FreeImage::SetSelectedPages(const std::vector<ScanPageItem>& pages)
+{
+  m_Scanner.setSelectedPages(pages);
+}
+
+void CTWAINDS_FreeImage::ClearSelectedPages()
+{
+  m_Scanner.clearSelectedPages();
+}
+
 bool CTWAINDS_FreeImage::StartScanning()
 {
   // Update the scanner with the latest negotiated caps
@@ -1981,6 +2126,15 @@ bool CTWAINDS_FreeImage::StartScanning()
     cerr << "ds: There was an error while prepping the image for scanning" << endl;
     setConditionCode(TWCC_BADVALUE);
     return false;
+  }
+
+  if (m_Scanner.hasSelectedPages())
+  {
+    int queuedPages = m_Scanner.getSelectedPageCount();
+    if (m_Xfers.Count == TW_UINT16(TWON_DONTCARE16) || m_Xfers.Count == 0 || (int)m_Xfers.Count > queuedPages)
+    {
+      m_Xfers.Count = (TW_UINT16)queuedPages;
+    }
   }
 
   return m_Scanner.acquireImage();

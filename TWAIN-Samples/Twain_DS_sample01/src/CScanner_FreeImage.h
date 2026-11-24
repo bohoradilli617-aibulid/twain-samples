@@ -1,7 +1,7 @@
 /***************************************************************************
-* Copyright © 2007 TWAIN Working Group:  
-*   Adobe Systems Incorporated, AnyDoc Software Inc., Eastman Kodak Company, 
-*   Fujitsu Computer Products of America, JFL Peripheral Solutions Inc., 
+* Copyright (c) 2007 TWAIN Working Group:
+*   Adobe Systems Incorporated, AnyDoc Software Inc., Eastman Kodak Company,
+*   Fujitsu Computer Products of America, JFL Peripheral Solutions Inc.,
 *   Ricoh Corporation, and Xerox Corporation.
 * All rights reserved.
 *
@@ -31,10 +31,7 @@
 
 /**
 * @file CScanner_FreeImage.h
-* Defines a scanner.
-* Create a virtual scanner.
-* @author TWAIN Working Group
-* @date April 2007
+* Defines a virtual TWAIN scanner backed by FreeImage and PDFium.
 */
 #ifndef __CSCANNER_H__
 #define __CSCANNER_H__
@@ -42,69 +39,12 @@
 #include "Common.h"
 #include "FreeImage.h"
 #include "twain.h"
+#include <string>
+#include <vector>
 
-/**
-* This is a virtual scanner.  The virtual scanner is used by the data source 
-* to try and somewhat simulate some real hardware interaction.
-* - It acquires the same image each time from an image file on the hard disk.
-* - It uses the FreeImage library to apply transforms to the base image.
-*
-* For simulation purposes the virtual Scanner is set up with the 
-* following specifications:
-*
-*   - Scanner Types
-*           - ADF(Automatic Document Feeder)
-*           - Flatbed
-*
-*   - Image sensors
-*           - CCD x 3 ( Front / Back / Flatbed )
-*
-*   - Scanning area Minimum
-*           - ADF       - A8 @ 127g/m2 paper
-*           - Flatbed   - unlimited
-*     
-*   - Scanning area Maximum
-*           - ADF       - Legal paper
-*           - Flatbed   - A4 letter paper
-*
-*   - Internal Optical Resolution
-*           - 600dpi
-*
-*   - Output Resolution
-*           - Binary    - 50, 100, 150, 200, 300, 400, 500, & 600
-*           - Grayscale - 50, 100, 150, 200, 300, 400, 500, & 600
-*           - Color     - 50, 100, 150, 200, 300, 400, 500, & 600
-*
-*   - Internal Bit Depth
-*           - 8 bits per color
-*
-*   - Output Bit Depth
-*           - Binary    - 1 bits
-*           - Grayscale - 8 bits 
-*           - Color     - 8 bits per color
-*
-*   - Halftone Patterns
-*           - Dither /error diffusion
-*
-*   - compression: JPEG, and FAX4 (CCITT G4)
-*
-*/
-
-// Defines used by Scanner FreeImage class to set and get attributes of the vurtual scanner.
-
-/**
-* The FreeImage scanner define for PaperSource is ADF
-*/
 #define SFI_PAPERSOURCE_ADF 0
-/**
-* The FreeImage scanner define for PaperSource is Flatbed
-*/
 #define SFI_PAPERSOURCE_FB  1
 
-/**
-* The FreeImage scanner data structure.  This data is passed back and forth between the scanner class and driver.
-* 
-*/
 struct SFreeImage
 {
   WORD              m_nPaperSource;           /**< the current paper source ADF or Flatbed*/
@@ -122,107 +62,59 @@ struct SFreeImage
   float             m_fThreshold;             /**< Threshold */
 };
 
+struct ScanPageItem
+{
+  std::wstring filePath;
+  int          pageIndex;
+  bool         isPdf;
+  bool         isMultiTiff;
 
+  ScanPageItem() : pageIndex(0), isPdf(false), isMultiTiff(false) {}
+  ScanPageItem(const std::wstring& path, int page, bool pdf, bool multiTiff)
+    : filePath(path), pageIndex(page), isPdf(pdf), isMultiTiff(multiTiff) {}
+};
 
-/**
-* The FreeImage scanner.  The software scanner using FreeImage.
-* 
-*/
 class CScanner_FreeImage : public SFreeImage
 {
 public:
-  /**
-  * Constructor for CScanner_FreeImage.
-  */
   CScanner_FreeImage();
-
-  /**
-  * Deconstructor for CScanner_FreeImage.
-  */
   ~CScanner_FreeImage();
 
-  /**
-  * Resets the scanner to factory default settings.
-  * Sets the scanners caps back to defaults.
-  * @return true if successfully reset.
-  */
   bool resetScanner();
+  void loadSourceConfig();
 
-  /**
-  * Get a scan line and put it into the _ImageXfer, fill values in _ImageXfer.
-  * @param[out] pTransferBuffer a pointer to an array of bytes to store the image data
-  * @param[in]  dwRead the number of bytes to read from scanner
-  * @param[out] dwReceived the actual number of bytes transfered
-  * @return true if successful
-  */
   bool getScanStrip(BYTE *pTransferBuffer, DWORD dwRead, DWORD &dwReceived);
 
-  /**
-  * Sets all the scanners capabilities to read only.
-  */
-  void Lock(void) {m_bReadOnly = true;}
+  void Lock(void)   { m_bReadOnly = true; }
+  void Unlock(void) { m_bReadOnly = false; }
 
-  /**
-  * Sets all the scanners capabilities to read and write.
-  */
-  void Unlock(void) {m_bReadOnly = false;}
-
-  /**
-  * Retrieves the image to scan from disk into memory.
-  * @return true if image was loaded into memory successfully.
-  */
   bool acquireImage();
 
-  ////////////////
-  // Accessors
-
-  /**
-  * get the current settings
-  * @return the current scanner settngs
-  */
   SFreeImage getSetting() const;
-
-  /**
-  * set the current settings
-  * @param[in] settings the new settings for the scanner
-  */
   void setSetting(SFreeImage settings);
 
-  /**
-  * Determine if there is paper sitting in the feeder.
-  * IF empty loads again for next time.
-  * @return true if paper in feeder else return false.
-  */
   bool isFeederLoaded();
-
-  /**
-  * Return status of the device is online or not.
-  * @return true if online.
-  */
   bool getDeviceOnline() const;
-  
-  short GetMaxPagesInADF(void){return m_nMaxDocCount;}
-  void SetMaxPagesInADF(short nVal){m_nMaxDocCount = nVal;};
+
+  short GetMaxPagesInADF(void) { return m_nMaxDocCount; }
+  void  SetMaxPagesInADF(short nVal) { m_nMaxDocCount = nVal; }
+
+  void setSelectedPages(const std::vector<ScanPageItem>& pages);
+  void clearSelectedPages();
+  bool hasSelectedPages() const { return m_bUseSelectedPages && !m_selectedPages.empty(); }
+  int  getSelectedPageCount() const { return (int)m_selectedPages.size(); }
+
+  bool getForceUI() const { return m_bForceUI; }
+  bool isForceUIEnabled();
+
+  static int getFilePageCount(const std::wstring& filePath, bool& outIsPdf, bool& outIsMultiTiff);
 
 protected:
-  /**
-  * Return the number of documents sitting in the feeder.
-  * This number can be set with enviroment varible kGETENV_XFERCOUNT "CAP_XFERCOUNT"
-  * this is so we can tell when the feeder is empty
-  * - If CAP_XFERCOUNT is not set will return 1.
-  * - if < 0 will return random number.
-  * @return default number of documents.
-  */
   short getDocumentCount() const;
-
-  /**
-  * Transform the image according to the caps set by the application.
-  * @return true if successful
-  */
   bool preScanPrep();
 
 public:
-  static bool		ms_blShowConsoleMessages;
+  static bool ms_blShowConsoleMessages;
 
 protected:
   FIBITMAP         *m_pDIB;                   /**< Pointer to current scanned image */
@@ -234,15 +126,17 @@ protected:
   short             m_nMaxDocCount;           /**< Max number of documents waiting to transfer */
   WORD              m_nSourceWidth;           /**< Width of image in FreeImage */
   WORD              m_nSourceHeight;          /**< Height of image in FreeImage */
-  char              m_szSourceImagePath[PATH_MAX];  /**< image used with FreeImage */
+  char              m_szSourceImagePath[PATH_MAX];  /**< fallback image used with FreeImage */
+
+  std::vector<std::string>  m_folderImages;   /**< optional fallback image list from source.json folder */
+  size_t                    m_nFolderPageIdx; /**< current index inside m_folderImages */
+  int                       m_nJobPageIndex;  /**< 0-based page index inside current scan job */
+  std::vector<ScanPageItem> m_selectedPages;  /**< user-selected page queue (PDF/images) */
+  bool                      m_bUseSelectedPages;   /**< true when scanning from user-selected queue */
+  bool                      m_bCurrentPageFromPdf; /**< true when current m_pDIB was rendered by PDFium */
+  bool                      m_bForceUI;            /**< true when source.json sets "force_ui": true */
 };
 
-/**
-* FreeImage error handler.
-* @param[in] fif format  / plugin responsible for the error.
-* @param[in] message Error Message.
-*/
 void FreeImageErrorHandler(FREE_IMAGE_FORMAT fif, const char *message);
 
 #endif // __CSCANNER_H__
-

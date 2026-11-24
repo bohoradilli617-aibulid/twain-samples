@@ -71,6 +71,7 @@ public:
   * @return a valid TWRC_xxxx return code.
   */
   TW_INT16 DisplayTWAINGUI(TW_USERINTERFACE Data, bool bSetup, bool bIndicators);
+  bool RunModalForceUI(ModalForceUIRequest& request);
 
   /**
   * Close the user interface for TWAIN

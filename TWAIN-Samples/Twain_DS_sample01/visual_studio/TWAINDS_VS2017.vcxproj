@@ -23,12 +23,12 @@
     <ProjectGuid>{1E73CADF-90D9-45E9-97E2-CD25E3532DB4}</ProjectGuid>
     <RootNamespace>TWAINDS_VS2005_mfc32</RootNamespace>
     <Keyword>Qt4VSv1.0</Keyword>
-    <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <PlatformToolset>v141_xp</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -46,7 +46,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -117,9 +117,9 @@ del /q /f /s "c:\windows\twain_32\sample2\*.*"</Command>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>user32.lib;FreeImage.lib;qtmaind.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;Comdlg32.lib;FreeImage.lib;qtmaind.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName)32.ds</OutputFile>
-      <AdditionalLibraryDirectories>..\..\pub\external\lib\win32;$(QTDIR)\..\msvc2015\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\pub\external\lib\win32;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>..\src\TWAINDS.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDatabaseFile>$(OutDir)TWAINDS_Sample01.pdb</ProgramDatabaseFile>
@@ -130,9 +130,9 @@ del /q /f /s "c:\windows\twain_32\sample2\*.*"</Command>
     <PostBuildEvent>
       <Message>Copy Data Source to windows\twain_32\sample2 dir</Message>
       <Command>copy "$(TargetPath)"  c:\windows\twain_32\sample2
-copy "$(ProjectDir)\..\..\pub\external\bin\win32\FreeImage.dll" c:\windows\twain_32\sample2
-copy "$(ProjectDir)\..\..\pub\bin\TWAIN_logo.png" c:\windows\twain_32\sample2
-"$(QTDIR)\..\msvc2015\bin\windeployqt.exe" --debug --compiler-runtime --libdir "c:\windows\twain_32\sample2"  --plugindir "c:\windows\twain_32\sample2" "c:\windows\twain_32\sample2\$(TargetFileName)"</Command>
+copy "$(ProjectDir)..\..\pub\external\bin\win32\FreeImage.dll" c:\windows\twain_32\sample2
+copy "$(ProjectDir)..\..\pub\bin\TWAIN_logo.png" c:\windows\twain_32\sample2
+"$(QTDIR)\bin\windeployqt.exe" --debug --compiler-runtime --libdir "c:\windows\twain_32\sample2"  --plugindir "c:\windows\twain_32\sample2" "c:\windows\twain_32\sample2\$(TargetFileName)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -158,7 +158,7 @@ del /q /f /s "c:\windows\twain_64\sample2\*.*"</Command>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>User32.lib;FreeImage.lib;qtmaind.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>User32.lib;Comdlg32.lib;FreeImage.lib;qtmaind.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName)64.ds</OutputFile>
       <AdditionalLibraryDirectories>..\..\pub\external\lib\win64;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>..\src\TWAINDS.def</ModuleDefinitionFile>
@@ -193,9 +193,9 @@ del /q /f /s "c:\windows\twain_32\sample2\*.*"
       <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>User32.lib;FreeImage.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>User32.lib;Comdlg32.lib;FreeImage.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName)32.ds</OutputFile>
-      <AdditionalLibraryDirectories>..\..\pub\external\lib\win32;$(QTDIR)\..\msvc2015\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\pub\external\lib\win32;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>..\src\TWAINDS.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -205,16 +205,10 @@ del /q /f /s "c:\windows\twain_32\sample2\*.*"
     </Link>
     <PostBuildEvent>
       <Message>Copy Data Source to pub\bin directory</Message>
-      <Command>copy "$(TargetPath)"  "$(ProjectDir)..\pub\bin\win32"
-copy "$(ProjectDir)..\..\pub\external\bin\win32\FreeImage.dll" "$(ProjectDir)..\pub\bin\win32"
-copy "$(ProjectDir)..\..\pub\bin\TWAIN_logo.png" "$(ProjectDir)..\pub\bin\win32"
-"$(QTDIR)\..\msvc2015\bin\windeployqt.exe" --release --compiler-runtime --libdir "$(ProjectDir)..\pub\bin\win32"  --plugindir "$(ProjectDir)..\pub\bin\win32" "$(ProjectDir)..\pub\bin\win32\$(TargetFileName)"
-
-copy "$(TargetPath)"  "c:\windows\twain_32\sample2"
-copy "$(ProjectDir)\..\..\pub\external\bin\win32\FreeImage.dll" "c:\windows\twain_32\sample2"
-copy "$(ProjectDir)\..\..\pub\bin\TWAIN_logo.png" "c:\windows\twain_32\sample2"
-"$(QTDIR)\..\msvc2015\bin\windeployqt.exe" --release --compiler-runtime --libdir "c:\windows\twain_32\sample2"  --plugindir "c:\windows\twain_32\sample2" "c:\windows\twain_32\sample2\$(TargetFileName)"
-</Command>
+      <Command>copy "$(TargetPath)"  c:\windows\twain_32\sample2
+copy "$(ProjectDir)..\..\pub\external\bin\win32\FreeImage.dll" c:\windows\twain_32\sample2
+copy "$(ProjectDir)..\..\pub\bin\TWAIN_logo.png" c:\windows\twain_32\sample2
+"$(QTDIR)\bin\windeployqt.exe" --release --verbose 2 "c:\windows\twain_32\sample2\$(TargetFileName)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -236,7 +230,7 @@ del /q /f /s "c:\windows\twain_64\sample2\*.*"</Command>
       <WarningLevel>Level3</WarningLevel>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>User32.lib;FreeImage.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>User32.lib;Comdlg32.lib;FreeImage.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName)64.ds</OutputFile>
       <AdditionalLibraryDirectories>..\..\pub\external\lib\win64;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>..\src\TWAINDS.def</ModuleDefinitionFile>
@@ -263,6 +257,7 @@ copy "$(ProjectDir)\..\..\pub\bin\TWAIN_logo.png" c:\windows\twain_64\sample2
     <ClCompile Include="..\..\common\CommonTWAIN.cpp" />
     <ClCompile Include="..\..\common\CTiffWriter.cpp" />
     <ClCompile Include="..\src\CommonDS.cpp" />
+    <ClCompile Include="..\src\CPdfRenderer.cpp" />
     <ClCompile Include="..\src\CScanner_FreeImage.cpp" />
     <ClCompile Include="..\src\CTWAINDS_Base.cpp" />
     <ClCompile Include="..\src\CTWAINDS_FreeImage.cpp" />
@@ -347,6 +342,7 @@ copy "$(ProjectDir)\..\..\pub\bin\TWAIN_logo.png" c:\windows\twain_64\sample2
     <ClInclude Include="..\..\common\CommonTWAIN.h" />
     <ClInclude Include="..\..\common\CTiffWriter.h" />
     <ClInclude Include="..\src\CommonDS.h" />
+    <ClInclude Include="..\src\CPdfRenderer.h" />
     <ClInclude Include="..\src\CScanner_FreeImage.h" />
     <ClInclude Include="..\src\CTWAINDS_Base.h" />
     <ClInclude Include="..\src\CTWAINDS_FreeImage.h" />
@@ -421,6 +417,7 @@ copy "$(ProjectDir)\..\..\pub\bin\TWAIN_logo.png" c:\windows\twain_64\sample2
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(QTDIR)\bin\moc.exe;%(FullPath);%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\src\GeneratedFiles\$(Platform)\$(Configuration)\moc_%(Filename).cpp;%(Outputs)</Outputs>
     </CustomBuild>
+    <ClInclude Include="..\src\json.hpp" />
     <ClInclude Include="..\src\QT_UI.h" />
     <ClInclude Include="..\src\TWAINContainer.h" />
     <ClInclude Include="..\src\TWAINContainerBool.h" />

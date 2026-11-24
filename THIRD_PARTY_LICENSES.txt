@@ -1,0 +1,78 @@
+THIRD-PARTY SOFTWARE LICENSES AND NOTICES
+=========================================
+
+This software bundles or incorporates the following third-party open-source
+components. Each component remains licensed under its respective license terms.
+
+-------------------------------------------------------------------------------
+1. TWAIN Working Group Sample Data Source (twain/twain-samples)
+-------------------------------------------------------------------------------
+License: BSD 3-Clause License
+Source:  https://github.com/twain/twain-samples
+
+Copyright (c) 2007 TWAIN Working Group:
+  Adobe Systems Incorporated, AnyDoc Software Inc., Eastman Kodak Company,
+  Fujitsu Computer Products of America, JFL Peripheral Solutions Inc.,
+  Ricoh Corporation, and Xerox Corporation.
+All rights reserved.
+See LICENSE.txt / TWAIN-Samples/Twain_DS_sample01/license.txt for full terms.
+
+-------------------------------------------------------------------------------
+2. Qt 5.15.2 (Qt5Core.dll, Qt5Gui.dll, Qt5Widgets.dll, qwindows.dll)
+-------------------------------------------------------------------------------
+License: GNU Lesser General Public License v3.0 (LGPL-3.0)
+Website: https://www.qt.io/
+Source:  https://download.qt.io/official_releases/qt/5.15/5.15.2/single/
+         https://code.qt.io/cgit/qt/qt5.git/tag/?h=v5.15.2
+
+This application dynamically links unmodified Qt 5.15.2 libraries under the
+terms of the GNU LGPL v3.0 (https://www.gnu.org/licenses/lgpl-3.0.txt) and
+GNU GPL v3.0 (https://www.gnu.org/licenses/gpl-3.0.txt). Users may replace
+the bundled Qt dynamic libraries with compatible modified versions.
+
+-------------------------------------------------------------------------------
+3. FreeImage (FreeImage.dll)
+-------------------------------------------------------------------------------
+License: FreeImage Public License (FIPL) Version 1.0 (or GPLv2 / GPLv3)
+Website: https://freeimage.sourceforge.io
+
+This software uses the FreeImage open source image library. See
+https://freeimage.sourceforge.io for details.
+FreeImage is used under the FreeImage Public License (FIPL) Version 1.0:
+https://freeimage.sourceforge.io/freeimage-license.txt
+
+-------------------------------------------------------------------------------
+4. PDFium (pdfium.dll via bblanchon/pdfium-binaries)
+-------------------------------------------------------------------------------
+License: Apache License 2.0 / BSD 3-Clause License
+Source:  https://pdfium.googlesource.com/pdfium/
+Binaries: https://github.com/bblanchon/pdfium-binaries
+
+See PDFIUM-LICENSE.txt (when bundled) and the upstream PDFium LICENSE file
+for full copyright notices and Apache-2.0 / BSD-3-Clause terms.
+
+-------------------------------------------------------------------------------
+5. JSON for Modern C++ (nlohmann/json)
+-------------------------------------------------------------------------------
+License: MIT License
+Source:  https://github.com/nlohmann/json
+
+Copyright (c) 2013-2019 Niels Lohmann <http://nlohmann.me>.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

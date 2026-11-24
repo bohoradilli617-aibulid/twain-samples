@@ -1,0 +1,169 @@
+name: Build 32-bit TWAINDS_Sample32.ds
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-win32:
+    runs-on: windows-latest
+
+    env:
+      QT_VERSION: 5.15.2
+      QT_ARCH: win32_msvc2019
+      QT_ROOT: C:\Qt\5.15.2\msvc2019
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC x86 (32-bit) environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Install 32-bit Qt 5.15.2 via aqtinstall
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip aqtinstall
+          python -m aqt install-qt --outputdir C:\Qt windows desktop ${{ env.QT_VERSION }} ${{ env.QT_ARCH }}
+          if (-not (Test-Path "${{ env.QT_ROOT }}\bin\qmake.exe")) {
+            throw "32-bit Qt installation failed at ${{ env.QT_ROOT }}"
+          }
+          echo "QTDIR=${{ env.QT_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "${{ env.QT_ROOT }}\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Locate Visual Studio solution and build Release | Win32
+        shell: pwsh
+        run: |
+          $sln = Get-ChildItem -Path "TWAIN-Samples" -Recurse -Filter "TWAINDS_VS2017.sln" | Select-Object -First 1
+          if (-not $sln) {
+            throw "Could not find TWAINDS_VS2017.sln under TWAIN-Samples/"
+          }
+          Write-Host "Building solution: $($sln.FullName)"
+
+          # Detect latest installed Windows 10/11 SDK on the runner
+          $sdkReg = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Microsoft SDKs\Windows\v10.0"
+          $latestSdk = $null
+          if (Test-Path $sdkReg) {
+            $latestSdk = (Get-ItemProperty -Path $sdkReg -ErrorAction SilentlyContinue).ProductVersion
+            if ($latestSdk -and $latestSdk -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+              $latestSdk = "$latestSdk.0"
+            }
+          }
+
+          $sdkRoot = "C:\Program Files (x86)\Windows Kits\10\Include"
+          if (-not $latestSdk -and (Test-Path $sdkRoot)) {
+            $latestSdk = Get-ChildItem -Path $sdkRoot -Directory |
+              Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+              Sort-Object { [version]$_.Name } -Descending |
+              Select-Object -First 1 -ExpandProperty Name
+          }
+
+          if (-not $latestSdk) {
+            throw "Could not detect any installed Windows 10/11 SDK on the runner."
+          }
+          Write-Host "Using WindowsTargetPlatformVersion: $latestSdk"
+
+          # Patch hardcoded WindowsTargetPlatformVersion in vcxproj files so subprojects match
+          Get-ChildItem -Path (Split-Path $sln.FullName) -Filter "*.vcxproj" | ForEach-Object {
+            $content = Get-Content -Path $_.FullName -Raw
+            $updated = $content -replace '<WindowsTargetPlatformVersion>[^<]+</WindowsTargetPlatformVersion>', "<WindowsTargetPlatformVersion>$latestSdk</WindowsTargetPlatformVersion>"
+            if ($updated -ne $content) {
+              Set-Content -Path $_.FullName -Value $updated -Encoding UTF8
+            }
+          }
+
+          $stageDir = "$env:GITHUB_WORKSPACE\stage\sample2"
+          New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+
+          msbuild $sln.FullName `
+            /t:Build `
+            /p:Configuration=Release `
+            /p:Platform=Win32 `
+            /p:WindowsTargetPlatformVersion=$latestSdk `
+            /p:OutDir="$stageDir\" `
+            /m
+
+      - name: Bundle 32-bit runtime DLLs, licenses, sample image, and source.json
+        shell: pwsh
+        run: |
+          $stageDir = "$env:GITHUB_WORKSPACE\stage\sample2"
+          $dsFile = Get-ChildItem -Path $stageDir -Filter "*.ds" | Select-Object -First 1
+          if (-not $dsFile) {
+            $dsFile = Get-ChildItem -Path "TWAIN-Samples" -Recurse -Filter "TWAINDS_Sample32.ds" | Select-Object -First 1
+            if ($dsFile) {
+              Copy-Item $dsFile.FullName -Destination "$stageDir\TWAINDS_Sample32.ds" -Force
+            } else {
+              throw "TWAINDS_Sample32.ds was not produced by the build."
+            }
+          }
+
+          # Copy 32-bit FreeImage.dll from the repo
+          $freeImage32 = Get-ChildItem -Path "TWAIN-Samples" -Recurse -Filter "FreeImage.dll" |
+            Where-Object { $_.FullName -match "Win32|x86|32" } |
+            Select-Object -First 1
+          if (-not $freeImage32) {
+            $freeImage32 = Get-ChildItem -Path "TWAIN-Samples" -Recurse -Filter "FreeImage.dll" | Select-Object -First 1
+          }
+          if ($freeImage32) {
+            Copy-Item $freeImage32.FullName -Destination "$stageDir\FreeImage.dll" -Force
+          }
+
+          # Download and bundle 32-bit PDFium runtime DLL for direct PDF page rendering
+          $pdfiumDir = "$env:RUNNER_TEMP\pdfium-x86"
+          New-Item -ItemType Directory -Force -Path $pdfiumDir | Out-Null
+          $pdfiumArchive = "$pdfiumDir\pdfium-win-x86.tgz"
+          Invoke-WebRequest -Uri "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x86.tgz" -OutFile $pdfiumArchive
+          tar -xzf $pdfiumArchive -C $pdfiumDir bin/pdfium.dll
+          if (-not (Test-Path "$pdfiumDir\bin\pdfium.dll")) {
+            throw "Failed to extract 32-bit pdfium.dll from pdfium-win-x86.tgz"
+          }
+          Copy-Item "$pdfiumDir\bin\pdfium.dll" -Destination "$stageDir\pdfium.dll" -Force
+          try {
+            tar -xzf $pdfiumArchive -C $pdfiumDir LICENSE 2>$null
+            if (Test-Path "$pdfiumDir\LICENSE") {
+              Copy-Item "$pdfiumDir\LICENSE" -Destination "$stageDir\PDFIUM-LICENSE.txt" -Force
+            }
+          } catch {}
+
+          # Deploy matching 32-bit Qt runtime DLLs
+          & "${{ env.QT_ROOT }}\bin\windeployqt.exe" --release --no-translations --no-opengl-sw "$stageDir\TWAINDS_Sample32.ds"
+
+          # Copy TWAIN_logo.png fallback image
+          $logo = Get-ChildItem -Path "TWAIN-Samples" -Recurse -Filter "TWAIN_logo.png" | Select-Object -First 1
+          if ($logo) {
+            Copy-Item $logo.FullName -Destination "$stageDir\TWAIN_logo.png" -Force
+          }
+
+          # Copy license files into portable bundle
+          if (Test-Path "LICENSE") {
+            Copy-Item "LICENSE" -Destination "$stageDir\LICENSE.txt" -Force
+          }
+          if (Test-Path "THIRD_PARTY_LICENSES.txt") {
+            Copy-Item "THIRD_PARTY_LICENSES.txt" -Destination "$stageDir\THIRD_PARTY_LICENSES.txt" -Force
+          }
+
+          # Write default source.json pointing to C:/Scan with force_ui enabled
+          Set-Content -Path "$stageDir\source.json" -Value '{"folder": "C:/Scan", "force_ui": true}' -Encoding UTF8
+
+          # Verify every .ds and .dll in stageDir is 32-bit x86 (PE Machine = 0x014C)
+          $binaries = Get-ChildItem -Path $stageDir -Include "*.ds","*.dll" -Recurse
+          foreach ($bin in $binaries) {
+            $bytes = [System.IO.File]::ReadAllBytes($bin.FullName)
+            $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+            if ($machine -ne 0x014C) {
+              throw "Bitness mismatch! $($bin.Name) has PE machine 0x$($machine.ToString('X4')) (expected 0x014C for 32-bit x86)."
+            }
+            Write-Host "Verified 32-bit (0x014C): $($bin.Name)"
+          }
+
+      - name: Upload 32-bit Virtual Scanner ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VirtualScanner-win32-portable
+          path: stage/sample2/**
+          if-no-files-found: error

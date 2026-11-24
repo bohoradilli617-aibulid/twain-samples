@@ -39,7 +39,137 @@
 #include "CommonDS.h"
 #include "QT_UI.h"
 #include "Qt_MainForm.h"
+#include <QtCore/QMetaObject>
 
+#if defined(TWNDS_OS_WIN)
+#include <objbase.h>
+extern HINSTANCE g_hinstance;
+#endif
+
+namespace
+{
+  static int   s_qtArgc   = 1;
+  static char  s_qtArg0[] = "VirtualScanner";
+  static char* s_qtArgv[] = { s_qtArg0, NULL };
+
+#if defined(TWNDS_OS_WIN)
+  void addQtPluginLibraryPath()
+  {
+    HMODULE hmodule = (HMODULE)g_hinstance;
+    if (!hmodule)
+    {
+      hmodule = ::GetModuleHandleA("TWAINDS_Sample32.ds");
+    }
+    if (!hmodule)
+    {
+      hmodule = ::GetModuleHandleA("TWAINDS_Sample64.ds");
+    }
+    if (hmodule)
+    {
+      char szDs[PATH_MAX] = {0};
+      DWORD len = ::GetModuleFileNameA(hmodule, szDs, sizeof(szDs) - 1);
+      if (len > 0)
+      {
+        char *szToken = strrchr(szDs, '\\');
+        if (szToken)
+        {
+          szToken[0] = 0; // folder where the .ds lives
+          QCoreApplication::addLibraryPath(QString::fromLocal8Bit(szDs));
+        }
+      }
+    }
+  }
+
+  INIT_ONCE        s_modalHostInitOnce = INIT_ONCE_STATIC_INIT;
+  CRITICAL_SECTION s_modalHostCs;
+  CRITICAL_SECTION s_modalDialogCs;
+  HANDLE           s_hModalHostThread  = NULL;
+  bool             s_bModalHostReady   = false;
+
+  BOOL CALLBACK initModalHostSync(PINIT_ONCE, PVOID, PVOID*)
+  {
+    ::InitializeCriticalSection(&s_modalHostCs);
+    ::InitializeCriticalSection(&s_modalDialogCs);
+    return TRUE;
+  }
+
+  DWORD WINAPI qtModalHostThreadProc(LPVOID lpParam)
+  {
+    HANDLE hReadyEvent = (HANDLE)lpParam;
+    HRESULT hrCom = ::CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+
+    addQtPluginLibraryPath();
+
+    QApplication app(s_qtArgc, s_qtArgv);
+    app.setQuitOnLastWindowClosed(false);
+
+    s_bModalHostReady = true;
+    if (hReadyEvent)
+    {
+      ::SetEvent(hReadyEvent);
+    }
+
+    app.exec();
+
+    s_bModalHostReady = false;
+    if (SUCCEEDED(hrCom))
+    {
+      ::CoUninitialize();
+    }
+    return 0;
+  }
+
+  bool ensureModalQtHostStarted()
+  {
+    ::InitOnceExecuteOnce(&s_modalHostInitOnce, initModalHostSync, NULL, NULL);
+    ::EnterCriticalSection(&s_modalHostCs);
+
+    if (s_hModalHostThread != NULL && s_bModalHostReady && qApp != NULL)
+    {
+      ::LeaveCriticalSection(&s_modalHostCs);
+      return true;
+    }
+
+    if (qApp != NULL)
+    {
+      // Host process already owns a QApplication instance.
+      ::LeaveCriticalSection(&s_modalHostCs);
+      return true;
+    }
+
+    // Pin this .ds module in the host process so FreeLibrary cannot unmap
+    // our persistent STA Qt UI thread between scans.
+    HMODULE hPinned = NULL;
+    ::GetModuleHandleExA(
+      GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+      (LPCSTR)&qtModalHostThreadProc,
+      &hPinned);
+
+    HANDLE hReadyEvent = ::CreateEventA(NULL, TRUE, FALSE, NULL);
+    if (!hReadyEvent)
+    {
+      ::LeaveCriticalSection(&s_modalHostCs);
+      return false;
+    }
+
+    DWORD threadId = 0;
+    s_hModalHostThread = ::CreateThread(NULL, 0, qtModalHostThreadProc, hReadyEvent, 0, &threadId);
+    if (!s_hModalHostThread)
+    {
+      ::CloseHandle(hReadyEvent);
+      ::LeaveCriticalSection(&s_modalHostCs);
+      return false;
+    }
+
+    DWORD waitRes = ::WaitForSingleObject(hReadyEvent, 15000);
+    ::CloseHandle(hReadyEvent);
+
+    bool ok = (waitRes == WAIT_OBJECT_0 && s_bModalHostReady && qApp != NULL);
+    ::LeaveCriticalSection(&s_modalHostCs);
+    return ok;
+  }
+#endif
+}
 
 CTWAIN_UI* CreateUI(CTWAINDS_FreeImage *pDS)
 {
@@ -56,12 +186,13 @@ void DestroyUI(CTWAIN_UI* pUI)
 
 void UIThread::run()
 {
-  int argc = 0;
-  m_pApp = new QApplication(argc, 0);
+  m_pApp = new QApplication(s_qtArgc, s_qtArgv);
   if(m_Data.ShowUI)
   {
     m_pDlg = new MainForm(m_pUI);
     m_pDlg->show();
+    m_pDlg->raise();
+    m_pDlg->activateWindow();
     m_pApp->exec();
   }
   delete m_pApp;
@@ -86,6 +217,53 @@ QT_UI::~QT_UI()
   }
 }
 
+bool QT_UI::RunModalForceUI(ModalForceUIRequest& request)
+{
+  request.accepted = false;
+  request.selectedPages.clear();
+
+#if defined(TWNDS_OS_WIN)
+  if (!ensureModalQtHostStarted() || !qApp)
+  {
+    return false;
+  }
+
+  ::EnterCriticalSection(&s_modalDialogCs);
+
+  if (QThread::currentThread() == qApp->thread())
+  {
+    MainForm dlg(&request, NULL);
+    dlg.exec();
+  }
+  else
+  {
+    HANDLE hDoneEvent = ::CreateEventA(NULL, TRUE, FALSE, NULL);
+    if (!hDoneEvent)
+    {
+      ::LeaveCriticalSection(&s_modalDialogCs);
+      return false;
+    }
+
+    ModalForceUIRequest *pReq = &request;
+    bool queued = QMetaObject::invokeMethod(qApp, [pReq, hDoneEvent]() {
+      MainForm dlg(pReq, NULL);
+      dlg.exec();
+      ::SetEvent(hDoneEvent);
+    }, Qt::QueuedConnection);
+
+    if (queued)
+    {
+      ::WaitForSingleObject(hDoneEvent, INFINITE);
+    }
+    ::CloseHandle(hDoneEvent);
+  }
+
+  ::LeaveCriticalSection(&s_modalDialogCs);
+  return request.accepted;
+#else
+  return false;
+#endif
+}
 
 TW_INT16 QT_UI::DisplayTWAINGUI(TW_USERINTERFACE Data, bool bSetup, bool bIndicators)
 {
@@ -119,36 +297,10 @@ TW_INT16 QT_UI::DisplayTWAINGUI(TW_USERINTERFACE Data, bool bSetup, bool bIndica
 #if defined (TWNDS_OS_WIN) || defined (TWNDS_OS_APPLE)
   if (!pApp)
   {
-    int argc = 0;
-	// Make sure we're in the path for QT so deployment works, but only
-	// do this if we're running from twain_32 or twain_64 so we don't
-	// bugger up the development environment.  We have to do this because
-	// QT gets its path from the .exe, not the .ds
-	HMODULE hmodule;
-	hmodule = ::GetModuleHandleA("TWAINDS_Sample32.ds");
-	if (!hmodule)
-	{
-		hmodule = ::GetModuleHandleA("TWAINDS_Sample64.ds");
-	}
-	if (hmodule)
-	{
-		char szDs[256];
-		char szDsLower[256];
-		::GetModuleFileNameA(hmodule, szDs, sizeof(szDs));
-		strcpy_s(szDsLower, sizeof(szDsLower), szDs);
-		_strlwr_s(szDsLower, sizeof(szDsLower));
-		if (strstr(szDsLower, "\\twain_32\\") || strstr(szDsLower, "\\twain_64\\"))
-		{
-			char *szToken = strrchr(szDs, '\\');
-			if (szToken)
-			{
-				szToken[0] = 0; // folder where the .ds lives
-				QCoreApplication::addLibraryPath(szDs);
-			}
-		}
-	}
-	// Back to our regularly scheduled program, already in progress...
-    pApp = m_pQtApp = new QApplication(argc, 0);
+#if defined(TWNDS_OS_WIN)
+    addQtPluginLibraryPath();
+#endif
+    pApp = m_pQtApp = new QApplication(s_qtArgc, s_qtArgv);
 //	  m_pQtApp->setAttribute(Qt::AA_DontUseNativeMenuBar,true);
 	  m_pQtApp->setAttribute(Qt::AA_MacPluginApplication,true);
   }
@@ -166,7 +318,7 @@ TW_INT16 QT_UI::DisplayTWAINGUI(TW_USERINTERFACE Data, bool bSetup, bool bIndica
   else
   {
 #if defined(TWNDS_OS_WIN) //|| defined (TWNDS_OS_APPLE)
-    if(Data.hParent)
+    if(Data.hParent && ::IsWindow((HWND)Data.hParent) && ::IsWindowVisible((HWND)Data.hParent) && !::IsIconic((HWND)Data.hParent))
     {
       m_pChildWnd = new QWidget();
       long ll =  GetWindowLong((HWND)(m_pChildWnd->winId()),GWL_STYLE);
@@ -181,6 +333,16 @@ TW_INT16 QT_UI::DisplayTWAINGUI(TW_USERINTERFACE Data, bool bSetup, bool bIndica
       if(m_pDlg)
       {
         m_pDlg->show();
+        m_pDlg->raise();
+        m_pDlg->activateWindow();
+#if defined(TWNDS_OS_WIN)
+        HWND hDlg = (HWND)m_pDlg->winId();
+        if (hDlg)
+        {
+          ::SetWindowPos(hDlg, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+          ::SetForegroundWindow(hDlg);
+        }
+#endif
       }
       else
       {

@@ -1,598 +1,747 @@
 #include "Qt_MainForm.h"
 #include "ui_MainForm.h"
+#include "CPdfRenderer.h"
+
 #include <QCloseEvent>
-#include "Qt_About.h"
-#include "Qt_ProfileName.h"
+#include <QCursor>
+#include <QHideEvent>
+#include <QShowEvent>
+#include <QStringList>
+#include <QTimer>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QScreen>
+#include <QtWidgets/QListWidgetItem>
 #include <QtWidgets/QMessageBox>
+#include <algorithm>
+#include <functional>
+#include <set>
 
-MainForm::MainForm(QT_UI *pUI,QWidget *parent)
-    : QDialog(parent), ui(new Ui::MainForm), m_valH(this),  m_valW(this)
+#ifdef _WIN32
+#include <windows.h>
+#include <commdlg.h>
+#endif
+
+namespace
 {
-  m_bSliderValueChanged = false;
-  m_pUI = pUI;
-  ui->setupUi(this);
+  const int kModeAllPages    = 0;
+  const int kModeFirstPage   = 1;
+  const int kModeCustomRange = 2;
 
-  ui->pLineEdit_PaperSize_Custom_Width->setValidator(&m_valW);
-  ui->pLineEdit_PaperSize_Custom_Height->setValidator(&m_valH);
-  if(m_pUI->m_bSetup)
+  std::wstring s_lastPickerDir;
+
+  QString baseFileName(const std::wstring& path)
+  {
+    size_t pos = path.find_last_of(L"\\/");
+    std::wstring name = (pos == std::wstring::npos) ? path : path.substr(pos + 1);
+    return QString::fromStdWString(name);
+  }
+
+#ifdef _WIN32
+  void forceWindowToForeground(HWND hWnd)
+  {
+    if (!hWnd || !::IsWindow(hWnd))
+    {
+      return;
+    }
+
+    ::AllowSetForegroundWindow(ASFW_ANY);
+    ::ShowWindow(hWnd, SW_RESTORE);
+    ::SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+
+    HWND hFg = ::GetForegroundWindow();
+    DWORD fgTid = hFg ? ::GetWindowThreadProcessId(hFg, NULL) : 0;
+    DWORD curTid = ::GetCurrentThreadId();
+    bool attached = false;
+    if (fgTid && fgTid != curTid)
+    {
+      attached = (::AttachThreadInput(curTid, fgTid, TRUE) != FALSE);
+    }
+
+    ::BringWindowToTop(hWnd);
+    ::SetForegroundWindow(hWnd);
+    ::SetActiveWindow(hWnd);
+
+    if (attached)
+    {
+      ::AttachThreadInput(curTid, fgTid, FALSE);
+    }
+  }
+#endif
+}
+
+MainForm::MainForm(QT_UI *pUI, QWidget *parent)
+  : QDialog(parent)
+  , ui(new Ui::MainForm)
+  , m_pUI(pUI)
+  , m_pModalRequest(NULL)
+  , m_bScanStarted(false)
+  , m_bFirstShow(true)
+{
+  ui->setupUi(this);
+  setWindowFlags((windowFlags() | Qt::Dialog | Qt::WindowStaysOnTopHint) & ~Qt::WindowContextHelpButtonHint);
+
+  if (m_pUI && m_pUI->m_bSetup)
   {
     ui->pPushButton_Scan->setText(QApplication::translate("MainForm", "Save", 0));
   }
 
-  lstString strFileNames;
-  pUI->TW_GetAllProfiles(strFileNames);
-  lstString::iterator iter = strFileNames.begin();
-  for(;iter!=strFileNames.end(); iter++)
-  {
-    QString strTemp = iter->c_str();
-    ui->pComboBox_Profiles->addItem(strTemp);
-  }
   UpdateControls();
-  return;
+  UpdateQueueSummary();
+}
+
+MainForm::MainForm(ModalForceUIRequest *pModalRequest, QWidget *parent)
+  : QDialog(parent)
+  , ui(new Ui::MainForm)
+  , m_pUI(NULL)
+  , m_pModalRequest(pModalRequest)
+  , m_bScanStarted(false)
+  , m_bFirstShow(true)
+{
+  ui->setupUi(this);
+  setWindowFlags((windowFlags() | Qt::Dialog | Qt::WindowStaysOnTopHint) & ~Qt::WindowContextHelpButtonHint);
+
+  PopulateModalControls();
+  UpdateQueueSummary();
 }
 
 MainForm::~MainForm()
 {
   delete ui;
-  return;
 }
 
-// Profile buttons
-void MainForm::on_pPushButton_Profile_Save_clicked(bool _bChecked)
+void MainForm::BringDialogToFront()
 {
-  ProfileName dlg;
-  int nRes = dlg.exec();
-  if(nRes)
+  raise();
+  activateWindow();
+#ifdef _WIN32
+  forceWindowToForeground((HWND)this->winId());
+#endif
+}
+
+void MainForm::showEvent(QShowEvent *evShow)
+{
+  QDialog::showEvent(evShow);
+
+  if (m_bFirstShow)
   {
-    QString strName = dlg.GetProfileName();
-    int nItem = ui->pComboBox_Profiles->findText(strName);
-    if(nItem>=0)
+    m_bFirstShow = false;
+    QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+    if (!screen)
     {
-      QMessageBox msgBox(QMessageBox::Critical, 
-      QApplication::translate("MainForm", "Error", 0),
-      QApplication::translate("MainForm", "Profile already exist. Do you want to overwrite it?", 0),
-      QMessageBox::Yes|QMessageBox::Cancel);
-      if(msgBox.exec() == QMessageBox::Cancel)
-      {
-        return;
-      }
+      screen = QGuiApplication::primaryScreen();
+    }
+    if (screen)
+    {
+      QRect avail = screen->availableGeometry();
+      move(avail.center() - rect().center());
     }
 
-    string strProfile = strName.toStdString();
-
-    if(m_pUI->TW_SaveProfileToFile(strProfile))
-    {
-      if(nItem<0)
+    BringDialogToFront();
+    QTimer::singleShot(50, this, [this]() {
+      if (isVisible())
       {
-        ui->pComboBox_Profiles->addItem(strName);
-        ui->pComboBox_Profiles->setCurrentIndex(ui->pComboBox_Profiles->count()-1);
+        BringDialogToFront();
       }
-      else
-      {
-        ui->pComboBox_Profiles->setCurrentIndex(nItem);
-      }
-    }
+    });
   }
-  return;
 }
 
-void MainForm::on_pPushButton_Profile_Load_clicked(bool _bChecked)
+bool MainForm::OpenNativeMultiFilePicker()
 {
-  if(ui->pComboBox_Profiles->currentIndex()==0)
+#ifdef _WIN32
+  std::vector<wchar_t> fileBuffer(65536, L'\0');
+
+  OPENFILENAMEW ofn;
+  ZeroMemory(&ofn, sizeof(ofn));
+  ofn.lStructSize     = sizeof(ofn);
+  ofn.hwndOwner       = (HWND)this->winId();
+  ofn.lpstrFilter     =
+    L"Supported Documents & Images (*.pdf;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff)\0*.pdf;*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff\0"
+    L"PDF Documents (*.pdf)\0*.pdf\0"
+    L"Image Files (*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff)\0*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff\0"
+    L"All Files (*.*)\0*.*\0\0";
+  ofn.lpstrFile       = &fileBuffer[0];
+  ofn.nMaxFile        = (DWORD)fileBuffer.size();
+  ofn.lpstrTitle      = L"Select PDF or Image Files to Scan";
+  ofn.lpstrInitialDir = s_lastPickerDir.empty() ? NULL : s_lastPickerDir.c_str();
+  ofn.Flags           = OFN_EXPLORER | OFN_ALLOWMULTISELECT | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+  BOOL picked = GetOpenFileNameW(&ofn);
+  BringDialogToFront();
+  if (!picked)
   {
-    m_pUI->ResetAllCaps();
+    return false;
+  }
+
+  std::vector<std::wstring> pickedPaths;
+  const wchar_t* p = &fileBuffer[0];
+  std::wstring firstToken(p);
+  p += firstToken.size() + 1;
+
+  if (*p == L'\0')
+  {
+    // Single file selected
+    pickedPaths.push_back(firstToken);
+    size_t slash = firstToken.find_last_of(L"\\/");
+    if (slash != std::wstring::npos)
+    {
+      s_lastPickerDir = firstToken.substr(0, slash);
+    }
   }
   else
   {
-    string strProfile = ui->pComboBox_Profiles->currentText().toStdString();
-    m_pUI->TW_LoadProfileFromFile(strProfile);
+    // Multiple files selected: firstToken is directory, followed by null-separated filenames
+    std::wstring dir = firstToken;
+    s_lastPickerDir = dir;
+    if (!dir.empty() && dir[dir.size() - 1] != L'\\' && dir[dir.size() - 1] != L'/')
+    {
+      dir += L'\\';
+    }
+    while (*p != L'\0')
+    {
+      std::wstring fileName(p);
+      pickedPaths.push_back(dir + fileName);
+      p += fileName.size() + 1;
+    }
   }
-  UpdateControls();
-  return;
-}
 
-void MainForm::on_pPushButton_Profile_Delete_clicked(bool _bChecked)
-{
-  string strProfile = ui->pComboBox_Profiles->currentText().toStdString();
-  if(m_pUI->TW_DeleteProfile(strProfile))
+  QStringList failedFiles;
+  bool pdfEngineMissing = false;
+  bool addedAny = false;
+
+  for (size_t i = 0; i < pickedPaths.size(); ++i)
   {
-    ui->pComboBox_Profiles->removeItem(ui->pComboBox_Profiles->currentIndex());
+    bool isPdf = false;
+    bool isMultiTiff = false;
+    int pageCount = CScanner_FreeImage::getFilePageCount(pickedPaths[i], isPdf, isMultiTiff);
+    if (pageCount <= 0)
+    {
+      if (isPdf && !CPdfRenderer::instance().ensureLoaded())
+      {
+        pdfEngineMissing = true;
+      }
+      failedFiles << baseFileName(pickedPaths[i]);
+      continue;
+    }
+
+    SelectedFileEntry entry;
+    entry.filePath    = pickedPaths[i];
+    entry.pageCount   = pageCount;
+    entry.isPdf       = isPdf;
+    entry.isMultiTiff = isMultiTiff;
+    m_files.push_back(entry);
+    addedAny = true;
   }
-  return;
+
+  RefreshFileList();
+
+  if (!failedFiles.isEmpty())
+  {
+    QString msg = QString("Could not open the following file(s):\n%1").arg(failedFiles.join("\n"));
+    if (pdfEngineMissing)
+    {
+      msg += "\n\nNote: 32-bit pdfium.dll was not found in the TWAIN data source folder.";
+    }
+    QMessageBox::warning(this, "Virtual Scanner", msg);
+  }
+
+  return addedAny;
+#else
+  return false;
+#endif
 }
 
-// Scan Settings controls
-void MainForm::on_pComboBox_Source_activated(int _nIndex)
+void MainForm::RefreshFileList()
 {
-  QVariant val  = ui->pComboBox_Source->itemData(_nIndex);
-  m_pUI->SetCapValueInt(CAP_FEEDERENABLED,val.toBool()?1:0);
-  UpdateControls(); 
-  return;
+  int prevRow = ui->pListWidget_Files->currentRow();
+  ui->pListWidget_Files->clear();
+
+  for (size_t i = 0; i < m_files.size(); ++i)
+  {
+    const SelectedFileEntry& entry = m_files[i];
+    QString label = QString("%1  (%2 %3)")
+      .arg(baseFileName(entry.filePath))
+      .arg(entry.pageCount)
+      .arg(entry.pageCount == 1 ? "page" : "pages");
+
+    QListWidgetItem* item = new QListWidgetItem(label);
+    item->setToolTip(QString::fromStdWString(entry.filePath));
+    ui->pListWidget_Files->addItem(item);
+  }
+
+  if (!m_files.empty())
+  {
+    int targetRow = (prevRow >= 0 && prevRow < (int)m_files.size()) ? prevRow : (int)m_files.size() - 1;
+    ui->pListWidget_Files->setCurrentRow(targetRow);
+  }
+
+  UpdateQueueSummary();
 }
 
-void MainForm::on_pComboBox_ScanSide_activated(int _nIndex)
+bool MainForm::ParsePageRange(const QString& rangeText, int totalPages, std::vector<int>& outZeroBasedIndices)
 {
-  QVariant val  = ui->pComboBox_ScanSide->itemData(_nIndex);
-  m_pUI->SetCapValueInt(CAP_DUPLEXENABLED,val.toBool()?1:0);
-  UpdateControls(); 
-  return;
+  outZeroBasedIndices.clear();
+  if (totalPages <= 0)
+  {
+    return false;
+  }
+
+  QString trimmed = rangeText.trimmed();
+  if (trimmed.isEmpty())
+  {
+    return false;
+  }
+
+  QStringList parts = trimmed.split(',', Qt::SkipEmptyParts);
+  if (parts.isEmpty())
+  {
+    return false;
+  }
+
+  for (int i = 0; i < parts.size(); ++i)
+  {
+    QString token = parts[i].trimmed();
+    int dashPos = token.indexOf('-');
+    if (dashPos >= 0)
+    {
+      bool okStart = false;
+      bool okEnd = false;
+      int startPage = token.left(dashPos).trimmed().toInt(&okStart);
+      int endPage   = token.mid(dashPos + 1).trimmed().toInt(&okEnd);
+      if (!okStart || !okEnd || startPage < 1 || endPage < 1 || startPage > endPage)
+      {
+        return false;
+      }
+      for (int p = startPage; p <= endPage && p <= totalPages; ++p)
+      {
+        outZeroBasedIndices.push_back(p - 1);
+      }
+    }
+    else
+    {
+      bool ok = false;
+      int pageNum = token.toInt(&ok);
+      if (!ok || pageNum < 1)
+      {
+        return false;
+      }
+      if (pageNum <= totalPages)
+      {
+        outZeroBasedIndices.push_back(pageNum - 1);
+      }
+    }
+  }
+
+  return !outZeroBasedIndices.empty();
 }
 
-void MainForm::on_pComboBox_ColorMode_activated(int _nIndex)
+bool MainForm::BuildQueuedPages(std::vector<ScanPageItem>& outPages, QString& outError) const
 {
-  QVariant val  = ui->pComboBox_ColorMode->itemData(_nIndex);
-  m_pUI->SetCapValueInt(ICAP_PIXELTYPE,val.toInt());
-  UpdateControls(); 
-  return;
+  outPages.clear();
+  outError.clear();
+
+  if (m_files.empty())
+  {
+    outError = "Please select at least one PDF or image file to scan.";
+    return false;
+  }
+
+  int mode = ui->pComboBox_MultiPageMode->currentIndex();
+
+  if (mode == kModeFirstPage)
+  {
+    for (size_t i = 0; i < m_files.size(); ++i)
+    {
+      const SelectedFileEntry& entry = m_files[i];
+      outPages.push_back(ScanPageItem(entry.filePath, 0, entry.isPdf, entry.isMultiTiff));
+    }
+    return !outPages.empty();
+  }
+
+  // Expand all pages in file order
+  std::vector<ScanPageItem> allPages;
+  for (size_t i = 0; i < m_files.size(); ++i)
+  {
+    const SelectedFileEntry& entry = m_files[i];
+    for (int p = 0; p < entry.pageCount; ++p)
+    {
+      allPages.push_back(ScanPageItem(entry.filePath, p, entry.isPdf, entry.isMultiTiff));
+    }
+  }
+
+  if (mode == kModeAllPages)
+  {
+    outPages = allPages;
+    return !outPages.empty();
+  }
+
+  // Custom page range (1-based across queued pages)
+  std::vector<int> indices;
+  if (!ParsePageRange(ui->pLineEdit_PageRange->text(), (int)allPages.size(), indices))
+  {
+    outError = QString("Invalid page range. Enter pages between 1 and %1 (e.g. 1-3 or 1,3).")
+      .arg((int)allPages.size());
+    return false;
+  }
+
+  for (size_t i = 0; i < indices.size(); ++i)
+  {
+    outPages.push_back(allPages[(size_t)indices[i]]);
+  }
+  return !outPages.empty();
+}
+
+void MainForm::UpdateQueueSummary()
+{
+  bool hasFiles = !m_files.empty();
+  ui->pPushButton_MoveUp->setEnabled(hasFiles);
+  ui->pPushButton_MoveDown->setEnabled(hasFiles);
+  ui->pPushButton_RemoveFile->setEnabled(hasFiles);
+  ui->pPushButton_ClearFiles->setEnabled(hasFiles);
+
+  if (!hasFiles)
+  {
+    ui->pLabel_QueueSummary->setText("No files selected. Click \"Add Files...\" (or click Scan to pick files).");
+    return;
+  }
+
+  int totalSourcePages = 0;
+  for (size_t i = 0; i < m_files.size(); ++i)
+  {
+    totalSourcePages += m_files[i].pageCount;
+  }
+
+  std::vector<ScanPageItem> queued;
+  QString err;
+  if (BuildQueuedPages(queued, err))
+  {
+    ui->pLabel_QueueSummary->setText(
+      QString("Selected: %1 file(s), %2 total page(s)  |  Will scan: %3 page(s)")
+        .arg((int)m_files.size())
+        .arg(totalSourcePages)
+        .arg((int)queued.size()));
+  }
+  else
+  {
+    ui->pLabel_QueueSummary->setText(
+      QString("Selected: %1 file(s), %2 total page(s)  |  %3")
+        .arg((int)m_files.size())
+        .arg(totalSourcePages)
+        .arg(err));
+  }
+}
+
+void MainForm::on_pPushButton_AddFiles_clicked(bool _bChecked)
+{
+  (void)_bChecked;
+  OpenNativeMultiFilePicker();
+}
+
+void MainForm::on_pPushButton_MoveUp_clicked(bool _bChecked)
+{
+  (void)_bChecked;
+  int row = ui->pListWidget_Files->currentRow();
+  if (row > 0 && row < (int)m_files.size())
+  {
+    std::swap(m_files[(size_t)row], m_files[(size_t)(row - 1)]);
+    RefreshFileList();
+    ui->pListWidget_Files->setCurrentRow(row - 1);
+  }
+}
+
+void MainForm::on_pPushButton_MoveDown_clicked(bool _bChecked)
+{
+  (void)_bChecked;
+  int row = ui->pListWidget_Files->currentRow();
+  if (row >= 0 && row + 1 < (int)m_files.size())
+  {
+    std::swap(m_files[(size_t)row], m_files[(size_t)(row + 1)]);
+    RefreshFileList();
+    ui->pListWidget_Files->setCurrentRow(row + 1);
+  }
+}
+
+void MainForm::on_pPushButton_RemoveFile_clicked(bool _bChecked)
+{
+  (void)_bChecked;
+  QList<QListWidgetItem*> selected = ui->pListWidget_Files->selectedItems();
+  if (selected.isEmpty())
+  {
+    return;
+  }
+  std::vector<int> rows;
+  for (int i = 0; i < selected.size(); ++i)
+  {
+    rows.push_back(ui->pListWidget_Files->row(selected[i]));
+  }
+  std::sort(rows.begin(), rows.end(), std::greater<int>());
+  for (size_t i = 0; i < rows.size(); ++i)
+  {
+    int r = rows[i];
+    if (r >= 0 && r < (int)m_files.size())
+    {
+      m_files.erase(m_files.begin() + r);
+    }
+  }
+  RefreshFileList();
+}
+
+void MainForm::on_pPushButton_ClearFiles_clicked(bool _bChecked)
+{
+  (void)_bChecked;
+  m_files.clear();
+  RefreshFileList();
 }
 
 void MainForm::on_pComboBox_Resolution_activated(int _nIndex)
 {
-  QVariant val  = ui->pComboBox_Resolution->itemData(_nIndex);
-  m_pUI->SetCapValueFloat(ICAP_XRESOLUTION,val.toInt());
-  m_pUI->SetCapValueFloat(ICAP_YRESOLUTION,val.toInt());
-  UpdateControls(); 
-  return;
-}
-
-// Scan Area controls
-void MainForm::on_pComboBox_Orientation_activated(int _nIndex)
-{
-  QVariant val  = ui->pComboBox_Orientation->itemData(_nIndex);
-  m_pUI->SetCapValueFloat(ICAP_ORIENTATION,val.toInt());
-  UpdateControls(); 
-  return;
-}
-
-void MainForm::on_pCheckBox_LongDoc_stateChanged(int _nState)
-{
-  m_pUI->SetCapValueInt(CUSTCAP_LONGDOCUMENT,ui->pCheckBox_LongDoc->checkState()==Qt::Checked?1:0);
-  UpdateControls(); 
-  return;
-}
-
-void MainForm::on_pComboBox_PaperSize_StandardSizes_activated(int _nIndex)
-{
-  QVariant val  = ui->pComboBox_PaperSize_StandardSizes->itemData(_nIndex);
-  m_pUI->SetCapValueInt(ICAP_SUPPORTEDSIZES,val.toInt());
-  UpdateControls(); 
-  return;
-}
-
-void MainForm::on_pLineEdit_PaperSize_Custom_Width_editingFinished()
-{
-  float fW = ui->pLineEdit_PaperSize_Custom_Width->text().toFloat();
-  float fH = ui->pLineEdit_PaperSize_Custom_Height->text().toFloat();
-  m_pUI->SetCurrentFrame(0.0f,0.0f,fH,fW);
-  UpdateControls(); 
-  return;
-}
-
-void MainForm::on_pLineEdit_PaperSize_Custom_Height_editingFinished()
-{
-  float fW = ui->pLineEdit_PaperSize_Custom_Width->text().toFloat();
-  float fH = ui->pLineEdit_PaperSize_Custom_Height->text().toFloat();
-  m_pUI->SetCurrentFrame(0.0f,0.0f,fH,fW);
-  UpdateControls(); 
-  return;
-}
-
-void MainForm::on_pComboBox_PaperSize_Custom_Units_activated(int _nIndex)
-{
-  QVariant val  = ui->pComboBox_PaperSize_Custom_Units->itemData(_nIndex);
-  m_pUI->SetCapValueInt(ICAP_UNITS,val.toInt());
-  UpdateControls(); 
-  return;
-}
-
-// Sliders
-void MainForm::on_pHorizontalSlider_Contrast_actionTriggered ( int action )
-{
-  if(action>0 && action<7)
+  if (m_pModalRequest || !m_pUI)
   {
-    m_bSliderValueChanged = true;
+    return;
   }
+  QVariant val = ui->pComboBox_Resolution->itemData(_nIndex);
+  m_pUI->SetCapValueFloat(ICAP_XRESOLUTION, (float)val.toInt());
+  m_pUI->SetCapValueFloat(ICAP_YRESOLUTION, (float)val.toInt());
+  UpdateControls();
 }
-void MainForm::on_pHorizontalSlider_Contrast_valueChanged(int value)
+
+void MainForm::on_pComboBox_ColorMode_activated(int _nIndex)
 {
-  if(m_bSliderValueChanged)
+  if (m_pModalRequest || !m_pUI)
   {
-    m_bSliderValueChanged = false;
-    m_pUI->SetCapValueFloat(ICAP_CONTRAST,ui->pHorizontalSlider_Contrast->value());
-    UpdateControls(); 
+    return;
   }
+  QVariant val = ui->pComboBox_ColorMode->itemData(_nIndex);
+  m_pUI->SetCapValueInt(ICAP_PIXELTYPE, val.toInt());
+  UpdateControls();
 }
 
-void MainForm::on_pHorizontalSlider_Contrast_sliderReleased()
+void MainForm::on_pComboBox_MultiPageMode_currentIndexChanged(int _nIndex)
 {
-  m_pUI->SetCapValueFloat(ICAP_CONTRAST,ui->pHorizontalSlider_Contrast->value());
-  UpdateControls(); 
-  return;
+  bool isCustom = (_nIndex == kModeCustomRange);
+  ui->pLabel_PageRange->setEnabled(isCustom);
+  ui->pLineEdit_PageRange->setEnabled(isCustom);
+  UpdateQueueSummary();
 }
 
-void MainForm::on_pHorizontalSlider_Brightness_actionTriggered ( int action )
+void MainForm::on_pLineEdit_PageRange_textChanged(const QString &text)
 {
-  if(action>0 && action<7)
-  {
-    m_bSliderValueChanged = true;
-  }
-}
-void MainForm::on_pHorizontalSlider_Brightness_valueChanged(int value)
-{
-  if(m_bSliderValueChanged)
-  {
-    m_bSliderValueChanged = false;
-    m_pUI->SetCapValueFloat(ICAP_BRIGHTNESS,ui->pHorizontalSlider_Brightness->value());
-    UpdateControls(); 
-  }
-}
-void MainForm::on_pHorizontalSlider_Brightness_sliderReleased()
-{
-  m_pUI->SetCapValueFloat(ICAP_BRIGHTNESS,ui->pHorizontalSlider_Brightness->value());
-  UpdateControls(); 
-  return;
+  (void)text;
+  UpdateQueueSummary();
 }
 
-void MainForm::on_pHorizontalSlider_Gamma_actionTriggered ( int action )
-{
-  if(action>0 && action<7)
-  {
-    m_bSliderValueChanged = true;
-  }
-}
-void MainForm::on_pHorizontalSlider_Gamma_valueChanged(int value)
-{
-  if(m_bSliderValueChanged)
-  {
-    m_bSliderValueChanged = false;
-    m_pUI->SetCapValueFloat(ICAP_GAMMA,ui->pHorizontalSlider_Gamma->value()/10.0);
-    UpdateControls(); 
-  }
-}
-void MainForm::on_pHorizontalSlider_Gamma_sliderReleased()
-{
-  m_pUI->SetCapValueFloat(ICAP_GAMMA,ui->pHorizontalSlider_Gamma->value()/10.0);
-  UpdateControls(); 
-  return;
-}
-
-void MainForm::on_pHorizontalSlider_Threshold_actionTriggered ( int action )
-{
-  if(action>0 && action<7)
-  {
-    m_bSliderValueChanged = true;
-  }
-}
-
-void MainForm::on_pHorizontalSlider_Threshold_valueChanged(int value)
-{
-  if(m_bSliderValueChanged)
-  {
-    m_bSliderValueChanged = false;
-    m_pUI->SetCapValueFloat(ICAP_THRESHOLD,ui->pHorizontalSlider_Threshold->value());
-    UpdateControls(); 
-  }
-}
-
-void MainForm::on_pHorizontalSlider_Threshold_sliderReleased()
-{
-  m_pUI->SetCapValueFloat(ICAP_THRESHOLD,ui->pHorizontalSlider_Threshold->value());
-  UpdateControls(); 
-  return;
-}
-
-// Batch control spinboxes
-void MainForm::on_pSpinBox_DocsInADF_valueChanged(int _nValue)
-{
-  m_pUI->SetCapValueInt(CUSTCAP_DOCS_IN_ADF,_nValue);
-  return;
-}
-
-// Bottom buttons
 void MainForm::on_pPushButton_Scan_clicked(bool _bChecked)
 {
-  if(m_pUI->m_bSetup)
+  (void)_bChecked;
+  if (!m_pModalRequest && m_pUI && m_pUI->m_bSetup)
   {
+    m_bScanStarted = true;
     m_pUI->Save();
+    return;
   }
-  else
+
+  if (m_files.empty())
   {
-    m_pUI->Scan();
+    if (!OpenNativeMultiFilePicker())
+    {
+      return;
+    }
   }
-  return;
+
+  std::vector<ScanPageItem> queuedPages;
+  QString err;
+  if (!BuildQueuedPages(queuedPages, err))
+  {
+    QMessageBox::warning(this, "Virtual Scanner", err);
+    return;
+  }
+
+  if (m_pModalRequest)
+  {
+    m_pModalRequest->selectedPages = queuedPages;
+    if (ui->pComboBox_Resolution->currentIndex() >= 0)
+    {
+      m_pModalRequest->selectedDpi = (float)ui->pComboBox_Resolution->currentData().toInt();
+    }
+    if (ui->pComboBox_ColorMode->currentIndex() >= 0)
+    {
+      m_pModalRequest->selectedPixelType = ui->pComboBox_ColorMode->currentData().toInt();
+    }
+    m_pModalRequest->accepted = true;
+    m_bScanStarted = true;
+    accept();
+    return;
+  }
+
+  if (!m_pUI)
+  {
+    return;
+  }
+
+  // Ensure ADF is enabled when transferring multiple pages
+  m_pUI->SetCapValueInt(CAP_FEEDERENABLED, (queuedPages.size() > 1) ? 1 : 0);
+  m_pUI->m_pDS->SetSelectedPages(queuedPages);
+
+  m_bScanStarted = true;
+  ui->pPushButton_Scan->setEnabled(false);
+  ui->pPushButton_AddFiles->setEnabled(false);
+  m_pUI->Scan();
+
+  if (!m_pUI->m_bScanning)
+  {
+    m_bScanStarted = false;
+    ui->pPushButton_Scan->setEnabled(true);
+    ui->pPushButton_AddFiles->setEnabled(true);
+    QMessageBox::warning(this, "Virtual Scanner", "Failed to prepare the selected page for scanning.");
+  }
 }
 
 void MainForm::on_pPushButton_Cancel_clicked(bool _bChecked)
 {
+  (void)_bChecked;
+  if (m_pModalRequest)
+  {
+    m_pModalRequest->accepted = false;
+    reject();
+    return;
+  }
   QEvent *pQEvent = new QEvent(QEvent::Close);
-  qApp->postEvent(this, pQEvent); 
-  return;
+  qApp->postEvent(this, pQEvent);
 }
+
 void MainForm::closeEvent(QCloseEvent *evClose)
 {
-  m_pUI->Cancel();
-  evClose->setAccepted (false);
-  return;
-}
-void MainForm::hideEvent (QHideEvent *evHide) 
-{
-  QEvent *pQEvent = new QEvent(QEvent::Close);
-  qApp->postEvent(this, pQEvent); 
-  return;
+  if (m_pModalRequest)
+  {
+    if (!m_bScanStarted)
+    {
+      m_pModalRequest->accepted = false;
+    }
+    evClose->accept();
+    return;
+  }
+
+  if (!m_bScanStarted && m_pUI)
+  {
+    m_pUI->m_pDS->ClearSelectedPages();
+    m_pUI->Cancel();
+  }
+  evClose->setAccepted(false);
 }
 
-void MainForm::on_pPushButton_Help_clicked(bool _bChecked)
+void MainForm::hideEvent(QHideEvent *evHide)
 {
-  
-  return;
+  QDialog::hideEvent(evHide);
 }
 
-void MainForm::on_pPushButton_About_clicked(bool _bChecked)
+void MainForm::PopulateModalControls()
 {
-  About dlg;
-  dlg.exec();
-  return;
+  ui->pComboBox_ColorMode->clear();
+  if (m_pModalRequest && !m_pModalRequest->validPixelTypes.empty())
+  {
+    for (unsigned int i = 0; i < m_pModalRequest->validPixelTypes.size(); i++)
+    {
+      int val = m_pModalRequest->validPixelTypes.at(i);
+      switch (val)
+      {
+        case TWPT_BW:
+          ui->pComboBox_ColorMode->addItem("Black and White", val);
+          break;
+        case TWPT_GRAY:
+          ui->pComboBox_ColorMode->addItem("Grayscale", val);
+          break;
+        case TWPT_RGB:
+          ui->pComboBox_ColorMode->addItem("Color", val);
+          break;
+        default:
+          continue;
+      }
+      if ((int)i == m_pModalRequest->currentPixelTypeIndex)
+      {
+        ui->pComboBox_ColorMode->setCurrentIndex(ui->pComboBox_ColorMode->count() - 1);
+      }
+    }
+  }
+  else
+  {
+    ui->pComboBox_ColorMode->addItem("Black and White", TWPT_BW);
+    ui->pComboBox_ColorMode->addItem("Grayscale", TWPT_GRAY);
+    ui->pComboBox_ColorMode->addItem("Color", TWPT_RGB);
+    ui->pComboBox_ColorMode->setCurrentIndex(2);
+  }
+
+  ui->pComboBox_Resolution->clear();
+  if (m_pModalRequest && !m_pModalRequest->validResolutions.empty())
+  {
+    for (unsigned int i = 0; i < m_pModalRequest->validResolutions.size(); i++)
+    {
+      int dpi = (int)m_pModalRequest->validResolutions.at(i);
+      ui->pComboBox_Resolution->addItem(QString("%1 DPI").arg(dpi), dpi);
+      if ((int)i == m_pModalRequest->currentResolutionIndex)
+      {
+        ui->pComboBox_Resolution->setCurrentIndex(ui->pComboBox_Resolution->count() - 1);
+      }
+    }
+  }
+  else
+  {
+    const int defaultDpis[] = { 100, 150, 200, 300, 600 };
+    for (size_t i = 0; i < sizeof(defaultDpis) / sizeof(defaultDpis[0]); ++i)
+    {
+      ui->pComboBox_Resolution->addItem(QString("%1 DPI").arg(defaultDpis[i]), defaultDpis[i]);
+    }
+    ui->pComboBox_Resolution->setCurrentIndex(2); // 200 DPI
+  }
 }
 
 void MainForm::UpdateControls()
 {
-  ui->pComboBox_Source->clear();
-  int nCapIndex = m_pUI->GetCurrentCapIndex(CAP_FEEDERENABLED);
-  const IntVector* lstCapValues = m_pUI->GetValidCap(CAP_FEEDERENABLED);
-  if(lstCapValues && lstCapValues->size()>0)
+  if (!m_pUI)
   {
-    ui->pComboBox_Source->addItem(lstCapValues->at(0)!=0?QApplication::translate("MainForm", "ADF", 0):
-      QApplication::translate("MainForm", "Flatbed", 0),lstCapValues->at(0)!=0);
-    if(lstCapValues->size()>1)
-    {
-      ui->pComboBox_Source->addItem(lstCapValues->at(1)!=0?QApplication::translate("MainForm", "ADF", 0):
-        QApplication::translate("MainForm", "Flatbed", 0),lstCapValues->at(1)!=0);
-    }
-    ui->pComboBox_Source->setCurrentIndex(nCapIndex);
+    return;
   }
-
-  ui->pComboBox_ScanSide->clear();
-  nCapIndex = m_pUI->GetCurrentCapIndex(CAP_DUPLEXENABLED);
-  lstCapValues = m_pUI->GetValidCap(CAP_DUPLEXENABLED);
-  if(lstCapValues && lstCapValues->size()>0)
-  {
-    ui->pComboBox_ScanSide->addItem(lstCapValues->at(0)!=0?QApplication::translate("MainForm", "Duplex", 0):
-      QApplication::translate("MainForm", "Simplex", 0),lstCapValues->at(0)!=0);
-    if(lstCapValues->size()>1)
-    {
-      ui->pComboBox_ScanSide->addItem(lstCapValues->at(1)!=0?QApplication::translate("MainForm", "Duplex", 0):
-        QApplication::translate("MainForm", "Simplex", 0),lstCapValues->at(1)!=0);
-    }
-    ui->pComboBox_ScanSide->setCurrentIndex(nCapIndex);
-  }  
-
   ui->pComboBox_ColorMode->clear();
-  nCapIndex = m_pUI->GetCurrentCapIndex(ICAP_PIXELTYPE);
-  lstCapValues = m_pUI->GetValidCap(ICAP_PIXELTYPE);
-  for(unsigned int i=0; i<lstCapValues->size();i++)
+  int nCapIndex = m_pUI->GetCurrentCapIndex(ICAP_PIXELTYPE);
+  const IntVector* lstCapValues = m_pUI->GetValidCap(ICAP_PIXELTYPE);
+  if (lstCapValues)
   {
-    switch(lstCapValues->at(i))
+    for (unsigned int i = 0; i < lstCapValues->size(); i++)
     {
-      case TWPT_BW:
-        ui->pComboBox_ColorMode->addItem(QApplication::translate("MainForm", "Black and White", 0),lstCapValues->at(i));
-        break;
-      case TWPT_GRAY:
-        ui->pComboBox_ColorMode->addItem(QApplication::translate("MainForm", "Grayscale", 0),lstCapValues->at(i));
-        break;
-      case TWPT_RGB:
-        ui->pComboBox_ColorMode->addItem(QApplication::translate("MainForm", "Color", 0),lstCapValues->at(i));
-        break;
-      default:
-        continue;
+      switch (lstCapValues->at(i))
+      {
+        case TWPT_BW:
+          ui->pComboBox_ColorMode->addItem("Black and White", lstCapValues->at(i));
+          break;
+        case TWPT_GRAY:
+          ui->pComboBox_ColorMode->addItem("Grayscale", lstCapValues->at(i));
+          break;
+        case TWPT_RGB:
+          ui->pComboBox_ColorMode->addItem("Color", lstCapValues->at(i));
+          break;
+        default:
+          continue;
+      }
+      if ((int)i == nCapIndex)
+      {
+        ui->pComboBox_ColorMode->setCurrentIndex(ui->pComboBox_ColorMode->count() - 1);
+      }
     }
-    if(i==nCapIndex)
-    {
-      ui->pComboBox_ColorMode->setCurrentIndex(ui->pComboBox_ColorMode->count()-1);
-    }
-  }
-
-  if(lstCapValues->at(nCapIndex)==TWPT_BW)
-  {
-    ui->pHorizontalSlider_Threshold->setEnabled(true);
-    ui->pLabel_Threshold->setEnabled(true);
-    ui->pHorizontalSlider_Contrast->setEnabled(false);
-    ui->pLabel_Contrast->setEnabled(false);
-    ui->pHorizontalSlider_Brightness->setEnabled(false);
-    ui->pLabel_Brightness->setEnabled(false);
-    ui->pHorizontalSlider_Gamma->setEnabled(false);
-    ui->pLabel_Gamma->setEnabled(false);
-  }
-  else
-  {
-    ui->pHorizontalSlider_Threshold->setEnabled(false);
-    ui->pLabel_Threshold->setEnabled(false);
-    ui->pHorizontalSlider_Contrast->setEnabled(true);
-    ui->pLabel_Contrast->setEnabled(true);
-    ui->pHorizontalSlider_Brightness->setEnabled(true);
-    ui->pLabel_Brightness->setEnabled(true);
-    ui->pHorizontalSlider_Gamma->setEnabled(true);
-    ui->pLabel_Gamma->setEnabled(true);
   }
 
   ui->pComboBox_Resolution->clear();
   nCapIndex = m_pUI->GetCurrentCapIndex(ICAP_XRESOLUTION);
   const FloatVector *lstCapValuesFlt = m_pUI->GetValidCapFloat(ICAP_XRESOLUTION);
-
-  for(unsigned int i=0; i<lstCapValuesFlt->size();i++)
+  if (lstCapValuesFlt)
   {
-    QString strTemp;
-    strTemp.setNum((int)lstCapValuesFlt->at(i));
-    ui->pComboBox_Resolution->addItem(strTemp,(int)lstCapValuesFlt->at(i));
-    if(i==nCapIndex)
+    for (unsigned int i = 0; i < lstCapValuesFlt->size(); i++)
     {
-      ui->pComboBox_Resolution->setCurrentIndex(ui->pComboBox_Resolution->count()-1);
-    }
-  }
-  
-  nCapIndex = m_pUI->GetCurrentCapIndex(CUSTCAP_LONGDOCUMENT);
-  lstCapValues = m_pUI->GetValidCap(CUSTCAP_LONGDOCUMENT);
-
-  ui->pCheckBox_LongDoc->setChecked(lstCapValues->at(nCapIndex)!=0);
-  
-
-  ui->pComboBox_Orientation->clear();
-  nCapIndex = m_pUI->GetCurrentCapIndex(ICAP_ORIENTATION);
-  lstCapValues = m_pUI->GetValidCap(ICAP_ORIENTATION);
-  for(unsigned int i=0; i<lstCapValues->size();i++)
-  {
-    switch(lstCapValues->at(i))
-    {
-      case TWOR_PORTRAIT:
-        ui->pComboBox_Orientation->addItem(QApplication::translate("MainForm", "Portrait", 0),lstCapValues->at(i));
-        break;
-      case TWOR_LANDSCAPE:
-        ui->pComboBox_Orientation->addItem(QApplication::translate("MainForm", "Landscape", 0),lstCapValues->at(i));
-        break;
-      default:
-        continue;
-    }
-    if(i==nCapIndex)
-    {
-      ui->pComboBox_Orientation->setCurrentIndex(ui->pComboBox_Orientation->count()-1);
-    }
-  }
-
-  ui->pComboBox_PaperSize_StandardSizes->clear();
-  nCapIndex = m_pUI->GetCurrentCapIndex(ICAP_SUPPORTEDSIZES);
-  lstCapValues = m_pUI->GetValidCap(ICAP_SUPPORTEDSIZES);
-  for(unsigned int i=0; i<lstCapValues->size();i++)
-  {
-    switch(lstCapValues->at(i))
-    {
-      case TWSS_NONE:
-        ui->pComboBox_PaperSize_StandardSizes->addItem(QApplication::translate("MainForm", "Custom", 0),lstCapValues->at(i));
-        break;
-      case TWSS_USLETTER:
-        ui->pComboBox_PaperSize_StandardSizes->addItem(QApplication::translate("MainForm", "US Letter (8.5\" x 11\")", 0),lstCapValues->at(i));
-        break;
-      case TWSS_USLEGAL:
-        ui->pComboBox_PaperSize_StandardSizes->addItem(QApplication::translate("MainForm", "US Legal (8.5\" x 14\")", 0),lstCapValues->at(i));
-        break;
-      default:
-        continue;
-    }
-    if(i==nCapIndex)
-    {
-      ui->pComboBox_PaperSize_StandardSizes->setCurrentIndex(ui->pComboBox_PaperSize_StandardSizes->count()-1);
-    }
-  }
-  if(lstCapValues->at(nCapIndex)==TWSS_NONE)
-  {
-    ui->pLineEdit_PaperSize_Custom_Width->setEnabled(true);
-    ui->pLineEdit_PaperSize_Custom_Height->setEnabled(true);
-    ui->pLabel_PaperSize_Custom_Width->setEnabled(true);
-    ui->pLabel_PaperSize_Custom_Height->setEnabled(true);
-    ui->pComboBox_Orientation->setEnabled(false);
-    ui->pLabel_Orientation->setEnabled(false);
-  }
-  else
-  {
-    ui->pLineEdit_PaperSize_Custom_Width->setEnabled(false);
-    ui->pLineEdit_PaperSize_Custom_Height->setEnabled(false);
-    ui->pLabel_PaperSize_Custom_Width->setEnabled(false);
-    ui->pLabel_PaperSize_Custom_Height->setEnabled(false);
-    ui->pComboBox_Orientation->setEnabled(true);
-    ui->pLabel_Orientation->setEnabled(true);
-  }
-  
-  TW_FRAME frame = m_pUI->GetCurrentFrame();
-  QString strTemp;
-  strTemp.setNum(FIX32ToFloat(frame.Right));
-  ui->pLineEdit_PaperSize_Custom_Width->setText(strTemp);
-
-  strTemp.setNum(FIX32ToFloat(frame.Bottom));
-  ui->pLineEdit_PaperSize_Custom_Height->setText(strTemp); 
-  float fMin, fMax, fStep, fCur;
-
-  fCur = m_pUI->GetCapValueFloat(ICAP_CONTRAST);
-  if(m_pUI->GetCapRangeFloat(ICAP_CONTRAST, fMin, fMax, fStep))
-  {
-    ui->pHorizontalSlider_Contrast->setMinimum((int)fMin);
-    ui->pHorizontalSlider_Contrast->setMaximum((int)fMax);
-    ui->pHorizontalSlider_Contrast->setValue((int)fCur);
-    ui->pHorizontalSlider_Contrast->setSingleStep((int)fStep);
-    ui->pHorizontalSlider_Contrast->setTickInterval((fMax-fMin)/10.0);
-  }
-
-  fCur = m_pUI->GetCapValueFloat(ICAP_BRIGHTNESS);
-  if(m_pUI->GetCapRangeFloat(ICAP_BRIGHTNESS, fMin, fMax, fStep))
-  {
-    ui->pHorizontalSlider_Brightness->setMinimum((int)fMin);
-    ui->pHorizontalSlider_Brightness->setMaximum((int)fMax);
-    ui->pHorizontalSlider_Brightness->setValue((int)fCur);
-    ui->pHorizontalSlider_Brightness->setSingleStep((int)fStep);
-    ui->pHorizontalSlider_Brightness->setTickInterval((fMax-fMin)/10.0);
-  }
-
-  fCur = m_pUI->GetCapValueFloat(ICAP_GAMMA);
-  fCur *=10.0;
-  if(fCur<1)
-  {
-    fCur = 1;
-  }
-  if(fCur>100)
-  {
-    fCur = 100;
-  }
-  ui->pHorizontalSlider_Gamma->setMinimum(1);
-  ui->pHorizontalSlider_Gamma->setMaximum(100);
-  ui->pHorizontalSlider_Gamma->setValue((int)fCur);
-  ui->pHorizontalSlider_Gamma->setSingleStep(1);
-  ui->pHorizontalSlider_Gamma->setTickInterval(10);
-
-  fCur = m_pUI->GetCapValueFloat(ICAP_THRESHOLD);
-  if(m_pUI->GetCapRangeFloat(ICAP_THRESHOLD, fMin, fMax, fStep))
-  {
-    ui->pHorizontalSlider_Threshold->setMinimum((int)fMin);
-    ui->pHorizontalSlider_Threshold->setMaximum((int)fMax);
-    ui->pHorizontalSlider_Threshold->setValue((int)fCur);
-    ui->pHorizontalSlider_Threshold->setSingleStep((int)fStep);
-    ui->pHorizontalSlider_Threshold->setTickInterval((fMax-fMin)/10.0);
-  }
-
-  lstCapValues = m_pUI->GetValidCap(CAP_XFERCOUNT);
-  ui->pSpinBox_XferCount->setValue(lstCapValues->at(0));
-
-  lstCapValues = m_pUI->GetValidCap(CUSTCAP_DOCS_IN_ADF);
-  ui->pSpinBox_DocsInADF->setValue(lstCapValues->at(0));
-
-  ui->pComboBox_PaperSize_Custom_Units->clear();
-  nCapIndex = m_pUI->GetCurrentCapIndex(ICAP_UNITS);
-  lstCapValues = m_pUI->GetValidCap(ICAP_UNITS);
-  for(unsigned int i=0; i<lstCapValues->size();i++)
-  {
-    switch(lstCapValues->at(i))
-    {
-      case TWUN_INCHES:
-        ui->pComboBox_PaperSize_Custom_Units->addItem(QApplication::translate("MainForm", "Inches", 0),lstCapValues->at(i));
-        break;
-      case TWUN_PIXELS:
-        ui->pComboBox_PaperSize_Custom_Units->addItem(QApplication::translate("MainForm", "Pixels", 0),lstCapValues->at(i));
-        break;
-      case TWUN_CENTIMETERS:
-        ui->pComboBox_PaperSize_Custom_Units->addItem(QApplication::translate("MainForm", "Centimeters", 0),lstCapValues->at(i));
-        break;
-      case TWUN_PICAS:
-        ui->pComboBox_PaperSize_Custom_Units->addItem(QApplication::translate("MainForm", "Picas", 0),lstCapValues->at(i));
-        break;
-      case TWUN_POINTS:
-        ui->pComboBox_PaperSize_Custom_Units->addItem(QApplication::translate("MainForm", "Points", 0),lstCapValues->at(i));
-        break;
-      case TWUN_TWIPS:
-        ui->pComboBox_PaperSize_Custom_Units->addItem(QApplication::translate("MainForm", "Twips", 0),lstCapValues->at(i));
-        break;
-      default:
-        continue;
-    }
-    if(i==nCapIndex)
-    {
-      ui->pComboBox_PaperSize_Custom_Units->setCurrentIndex(ui->pComboBox_PaperSize_Custom_Units->count()-1);
+      int dpi = (int)lstCapValuesFlt->at(i);
+      ui->pComboBox_Resolution->addItem(QString("%1 DPI").arg(dpi), dpi);
+      if ((int)i == nCapIndex)
+      {
+        ui->pComboBox_Resolution->setCurrentIndex(ui->pComboBox_Resolution->count() - 1);
+      }
     }
   }
 }
-

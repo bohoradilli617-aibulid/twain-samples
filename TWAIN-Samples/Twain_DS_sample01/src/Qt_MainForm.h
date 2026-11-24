@@ -3,12 +3,15 @@
 #include "QT_UI.h"
 
 #include <QtWidgets/QDialog>
-#include <QDoubleValidator>
+#include <string>
+#include <vector>
 
 namespace Ui
 {
   class MainForm;
 }
+
+class QShowEvent;
 
 class MainForm : public QDialog
 {
@@ -16,63 +19,55 @@ class MainForm : public QDialog
 
 public:
   MainForm(QT_UI *pUI, QWidget *parent = 0);
+  explicit MainForm(ModalForceUIRequest *pModalRequest, QWidget *parent = 0);
   ~MainForm();
 
 protected slots:
-  // void on_<object name>_<signal name>(<signal parameters>);
+  // File queue buttons
+  void on_pPushButton_AddFiles_clicked(bool _bChecked = false);
+  void on_pPushButton_MoveUp_clicked(bool _bChecked = false);
+  void on_pPushButton_MoveDown_clicked(bool _bChecked = false);
+  void on_pPushButton_RemoveFile_clicked(bool _bChecked = false);
+  void on_pPushButton_ClearFiles_clicked(bool _bChecked = false);
 
-  // Profile buttons
-  void on_pPushButton_Profile_Save_clicked(bool _bChecked = false);
-  void on_pPushButton_Profile_Load_clicked(bool _bChecked = false);
-  void on_pPushButton_Profile_Delete_clicked(bool _bChecked = false);
-
-  // Scan Settings controls
-  void on_pComboBox_Source_activated(int _nIndex);
-  void on_pComboBox_ScanSide_activated(int _nIndex);
-  void on_pComboBox_ColorMode_activated(int _nIndex);
+  // Scan settings controls
   void on_pComboBox_Resolution_activated(int _nIndex);
-
-  // Scan Area controls
-  void on_pComboBox_Orientation_activated(int _nIndex);
-  void on_pCheckBox_LongDoc_stateChanged(int _nState);
-  void on_pComboBox_PaperSize_StandardSizes_activated(int _nIndex);
-  void on_pLineEdit_PaperSize_Custom_Width_editingFinished();
-  void on_pLineEdit_PaperSize_Custom_Height_editingFinished();
-  void on_pComboBox_PaperSize_Custom_Units_activated(int _nIndex);
-
-  // Sliders
-  void on_pHorizontalSlider_Contrast_valueChanged(int value);
-  void on_pHorizontalSlider_Brightness_valueChanged(int value);
-  void on_pHorizontalSlider_Gamma_valueChanged(int value);
-  void on_pHorizontalSlider_Threshold_valueChanged(int value);
-  void on_pHorizontalSlider_Contrast_sliderReleased();
-  void on_pHorizontalSlider_Brightness_sliderReleased();
-  void on_pHorizontalSlider_Gamma_sliderReleased();
-  void on_pHorizontalSlider_Threshold_sliderReleased();
-  void on_pHorizontalSlider_Contrast_actionTriggered ( int action ) ;
-  void on_pHorizontalSlider_Brightness_actionTriggered ( int action ) ;
-  void on_pHorizontalSlider_Gamma_actionTriggered ( int action ) ;
-  void on_pHorizontalSlider_Threshold_actionTriggered ( int action ) ;
-
-  // Batch control spinboxes
-  void on_pSpinBox_DocsInADF_valueChanged(int _nValue);
+  void on_pComboBox_ColorMode_activated(int _nIndex);
+  void on_pComboBox_MultiPageMode_currentIndexChanged(int _nIndex);
+  void on_pLineEdit_PageRange_textChanged(const QString &text);
 
   // Bottom buttons
   void on_pPushButton_Scan_clicked(bool _bChecked = false);
   void on_pPushButton_Cancel_clicked(bool _bChecked = false);
-  void on_pPushButton_Help_clicked(bool _bChecked = false);
-  void on_pPushButton_About_clicked(bool _bChecked = false);
 
 private:
+  struct SelectedFileEntry
+  {
+    std::wstring filePath;
+    int          pageCount;
+    bool         isPdf;
+    bool         isMultiTiff;
+  };
+
   Ui::MainForm *ui;
   QT_UI *m_pUI;
-  void UpdateControls(void);
-  void closeEvent(QCloseEvent *);
-  void hideEvent (QHideEvent *evHide);
-  bool m_bSliderValueChanged;
-  QDoubleValidator m_valH;
-  QDoubleValidator m_valW;
+  ModalForceUIRequest *m_pModalRequest;
+  std::vector<SelectedFileEntry> m_files;
+  bool m_bScanStarted;
+  bool m_bFirstShow;
 
+  void UpdateControls(void);
+  void PopulateModalControls(void);
+  void RefreshFileList(void);
+  void UpdateQueueSummary(void);
+  void BringDialogToFront(void);
+  bool OpenNativeMultiFilePicker(void);
+  bool BuildQueuedPages(std::vector<ScanPageItem>& outPages, QString& outError) const;
+  static bool ParsePageRange(const QString& rangeText, int totalPages, std::vector<int>& outZeroBasedIndices);
+
+  void showEvent(QShowEvent *evShow);
+  void closeEvent(QCloseEvent *);
+  void hideEvent(QHideEvent *evHide);
 };
 
 #endif // QT_MAINFORM_H

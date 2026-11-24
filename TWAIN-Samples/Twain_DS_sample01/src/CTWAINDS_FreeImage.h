@@ -1,5 +1,5 @@
 /***************************************************************************
-* Copyright © 2007 TWAIN Working Group:  
+* Copyright ¬© 2007 TWAIN Working Group:  
 *   Adobe Systems Incorporated, AnyDoc Software Inc., Eastman Kodak Company, 
 *   Fujitsu Computer Products of America, JFL Peripheral Solutions Inc., 
 *   Ricoh Corporation, and Xerox Corporation.
@@ -200,7 +200,7 @@ public:
   CTWAINContainer* findCapability(const TW_UINT16 _unCap);
 
   /**
-  * Request the DSM the most likly user clicks on the ìOKî button on GUI.
+  * Request the DSM the most likly user clicks on the ‚ÄúOK‚Äù button on GUI.
   * @return true if successful.
   */
   virtual bool DoCloseDSOkEvent();
@@ -219,6 +219,8 @@ public:
   
   bool StartScanning();
   bool StopScanning(){m_bCanceled = true; return true;};
+  void SetSelectedPages(const std::vector<ScanPageItem>& pages);
+  void ClearSelectedPages();
   bool ReadCustomDSdata(stringstream &DsData);
   bool StoreCustomDSdata(stringstream &DsData);
   bool StoreCapInStream(stringstream &_DsData, TW_UINT16 _unCapID, TW_UINT16 _unCapIdx, TW_UINT16 unContType);

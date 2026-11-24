@@ -170,6 +170,11 @@ TW_INT16 CTWAIN_UI::DisplayTWAINGUI(TW_USERINTERFACE Data, bool bSetup, bool bIn
   m_bScanning =(Data.ShowUI==0);
   return 0;
 }
+bool CTWAIN_UI::RunModalForceUI(ModalForceUIRequest& request)
+{
+  request.accepted = false;
+  return false;
+}
 void CTWAIN_UI::DestroyTWAINGUI()
 {
   m_bScanning=false;
