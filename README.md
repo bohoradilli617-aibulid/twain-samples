@@ -3,7 +3,7 @@
 > **Important Notice — Unmaintained, No Liability, AI-Assisted Code**
 > - **Not Maintained:** This repository is published for personal/educational sharing only and is **not actively maintained**. Issues, pull requests, and support requests may not be answered.
 > - **No Warranty / No Liability:** This software and its prebuilt binaries are provided **"AS IS"**, without warranty of any kind. The author(s) and contributors accept **no liability** for any direct, indirect, incidental, or consequential damages, system issues, data loss, or third-party terms-of-service / compliance issues arising from the use or misuse of this software. Use entirely at your own risk.
-> - **Mostly AI-Written:** The custom extensions, UI rewrite, PDFium integration, modal `force_ui` host, and GitHub Actions build workflow in this fork were **mostly written with AI assistance** on top of the upstream TWAIN Working Group sample driver. Review the source code yourself before trusting or deploying it.
+> - **Mostly AI-Written:** The custom extensions, UI rewrite, PDFium integration, modal `force_ui` host, installer scripts, and GitHub Actions build workflow in this fork were **mostly written with AI assistance** on top of the upstream TWAIN Working Group sample driver. Review the source code yourself before trusting or deploying it.
 
 ---
 
@@ -17,20 +17,31 @@ This project builds a **32-bit Windows TWAIN Data Source** (`TWAINDS_Sample32.ds
 - **Scan Controls:** Choose **Resolution (DPI)**, **Color Mode** (Color, Grayscale, Black & White), and **Multi-Page Mode** (All Pages via ADF, First Page Only, or Custom Page Range such as `1-3` or `1,3,5`).
 - **Forced UI (`"force_ui": true`) for Headless TWAIN Callers:** When a TWAIN application or web scanner bridge calls `MSG_ENABLEDS` with `ShowUI = FALSE`, enabling `"force_ui": true` in `source.json` opens the Qt file-picker dialog anyway — running modally on a dedicated persistent STA Qt UI thread so callers do not need a Win32 message loop.
 - **Always-On-Top Windowing:** Centers the picker dialog on the active monitor and raises/activates it above browser and desktop windows (`Qt::WindowStaysOnTopHint`, `raise()`, `activateWindow()`, and Win32 topmost/foreground activation).
-- **Automated 32-bit CI Build:** [`.github/workflows/build-x86.yml`](.github/workflows/build-x86.yml) compiles `Release | Win32` with MSVC x86 and 32-bit Qt 5.15.2, bundles all matching 32-bit runtime DLLs and licenses, verifies every `.ds`/`.dll` PE header is 32-bit x86 (`0x014C`), and uploads `VirtualScanner-win32-portable`.
+- **Automated 32-bit CI & Release Builds:** [`.github/workflows/build-x86.yml`](.github/workflows/build-x86.yml) compiles `Release | Win32` with MSVC x86 and 32-bit Qt 5.15.2, bundles all matching 32-bit runtime DLLs, helper scripts, and licenses, verifies every `.ds`/`.dll` PE header is 32-bit x86 (`0x014C`), and attaches `VirtualScanner-win32-portable.zip` to GitHub Releases.
 
 ---
 
 ## Installation (Windows 32-bit TWAIN)
 
-1. Download the `VirtualScanner-win32-portable` artifact from **Actions → Build 32-bit TWAINDS_Sample32.ds**.
-2. Extract all files into:
-   ```text
-   C:\Windows\twain_32\sample2\
-   ```
-   *(Administrator privileges are required to copy into `C:\Windows\twain_32\`.)*
-3. Ensure a 32-bit TWAIN Data Source Manager (`twain_32.dll` or `twaindsm.dll`) is present on Windows.
-4. Select **Windows Virtual Scanner** inside your 32-bit TWAIN application.
+### Option 1 — Download Prebuilt ZIP from Releases (Recommended)
+GitHub Release downloads are permanent (unlike temporary Actions artifacts):
+
+1. Go to the **[Releases](../../releases/latest)** page and download **`VirtualScanner-win32-portable.zip`**.
+2. Extract the ZIP to a temporary folder.
+3. Close any running scanner application or TWAIN bridge.
+4. Run **`install.cmd`** (it prompts for Administrator privileges and copies everything into `C:\Windows\twain_32\sample2\`, preserving any existing `source.json`).
+   - *Manual alternative:* Copy all extracted files directly into `C:\Windows\twain_32\sample2\`.
+5. Make sure a 32-bit TWAIN Data Source Manager (`twain_32.dll` or `twaindsm.dll`) is present on Windows, then select **Windows Virtual Scanner** in your 32-bit TWAIN app.
+
+### Option 2 — Build Fresh Yourself on GitHub Actions
+If you want to build directly from source without installing Visual Studio or Qt locally:
+
+1. Fork this repository on GitHub.
+2. Open **Actions → Build 32-bit TWAINDS_Sample32.ds → Run workflow**.
+3. Download the freshly built `VirtualScanner-win32-portable` artifact and follow steps 2–5 above.
+
+### Uninstall
+Run `C:\Windows\twain_32\sample2\uninstall.cmd` (as Administrator), or delete the `C:\Windows\twain_32\sample2\` folder manually after closing any scanner app/bridge.
 
 ---
 
@@ -74,4 +85,4 @@ Full credit for the underlying TWAIN driver architecture and bundled libraries b
 ## License
 
 - Source code in this repository is licensed under the **BSD 3-Clause License** — see [`LICENSE`](LICENSE).
-- Full third-party license notices are included in [`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt) and bundled inside the portable ZIP artifact.
+- Full third-party license notices are included in [`THIRD_PARTY_LICENSES.txt`](THIRD_PARTY_LICENSES.txt) and bundled inside the portable ZIP release.
