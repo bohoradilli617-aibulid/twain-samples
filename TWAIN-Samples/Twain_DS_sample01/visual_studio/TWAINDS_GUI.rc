@@ -7,7 +7,7 @@
 //
 // Generated from the TEXTINCLUDE 2 resource.
 //
-#include "afxres.h"
+#include "winres.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -34,22 +34,16 @@ END
 
 2 TEXTINCLUDE 
 BEGIN
-    "#include ""afxres.h""\r\n"
+    "#include ""winres.h""\r\n"
     "\0"
 END
 
 3 TEXTINCLUDE 
 BEGIN
-    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
-    "#define _AFX_NO_OLE_RESOURCES\r\n"
-    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
-    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
-    "\r\n"
     "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
     "LANGUAGE 9, 1\r\n"
     "#pragma code_page(1252)\r\n"
     "#include ""res\\TWAINGUI.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
-    "#include ""afxres.rc""     // Standard components\r\n"
     "#endif\r\n"
     "\0"
 END
@@ -79,13 +73,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "TWAIN Working Group"
-            VALUE "FileDescription", "SAMPLE Data Source"
+            VALUE "CompanyName", "Virtual Scanner Project"
+            VALUE "FileDescription", "Windows Virtual Scanner 32-bit TWAIN Data Source"
             VALUE "FileVersion", "2, 5, 0, 0"
-            VALUE "InternalName", "TWAINDS.dll"
-            VALUE "LegalCopyright", "(c) TWAIN Working Group.  All rights reserved."
-            VALUE "OriginalFilename", "TWAINDS.dll"
-            VALUE "ProductName", "SampleDS01"
+            VALUE "InternalName", "TWAINDS_Sample32.ds"
+            VALUE "LegalCopyright", "BSD 3-Clause License (based on TWAIN Working Group twain-samples)"
+            VALUE "OriginalFilename", "TWAINDS_Sample32.ds"
+            VALUE "ProductName", "Windows Virtual Scanner"
             VALUE "ProductVersion", "2, 5, 0, 0"
         END
     END
@@ -105,16 +99,10 @@ END
 //
 // Generated from the TEXTINCLUDE 3 resource.
 //
-#define _AFX_NO_SPLITTER_RESOURCES
-#define _AFX_NO_OLE_RESOURCES
-#define _AFX_NO_TRACKER_RESOURCES
-#define _AFX_NO_PROPERTY_RESOURCES
-
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
 LANGUAGE 9, 1
 #pragma code_page(1252)
 #include "res\TWAINGUI.rc2"  // non-Microsoft Visual C++ edited resources
-#include "afxres.rc"     // Standard components
 #endif
 
 /////////////////////////////////////////////////////////////////////////////
