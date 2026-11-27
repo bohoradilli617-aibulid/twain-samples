@@ -1,9 +1,12 @@
 #ifndef QT_MAINFORM_H
 #define QT_MAINFORM_H
 #include "QT_UI.h"
+#include "CEsclClient.h"
 
 #include <QtWidgets/QDialog>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace Ui
@@ -29,6 +32,12 @@ protected slots:
   void on_pPushButton_MoveDown_clicked(bool _bChecked = false);
   void on_pPushButton_RemoveFile_clicked(bool _bChecked = false);
   void on_pPushButton_ClearFiles_clicked(bool _bChecked = false);
+
+  // Network eSCL scanner controls
+  void on_pPushButton_EsclScan_clicked(bool _bChecked = false);
+  void on_pComboBox_EsclSource_currentIndexChanged(int _nIndex);
+  void on_pComboBox_EsclPaper_currentIndexChanged(int _nIndex);
+  void on_pCheckBox_EsclAutoSend_toggled(bool _bChecked);
 
   // Scan settings controls
   void on_pComboBox_Resolution_activated(int _nIndex);
@@ -56,8 +65,20 @@ private:
   bool m_bScanStarted;
   bool m_bFirstShow;
 
+  EsclUserSettings m_esclSettings;
+  bool m_bEsclInitializing;
+  bool m_bEsclScanning;
+  std::shared_ptr<EsclCancelToken> m_esclCancel;
+  std::thread m_esclThread;
+
   void UpdateControls(void);
   void PopulateModalControls(void);
+  void InitEsclControls(void);
+  void RefreshEsclCombo(void);
+  std::string GetSelectedEsclTarget(void) const;
+  void SetEsclScanningUiState(bool scanning);
+  void StopEsclWorker(void);
+  void HandleEsclScanFinished(const EsclScanResult& result);
   void RefreshFileList(void);
   void UpdateQueueSummary(void);
   void BringDialogToFront(void);

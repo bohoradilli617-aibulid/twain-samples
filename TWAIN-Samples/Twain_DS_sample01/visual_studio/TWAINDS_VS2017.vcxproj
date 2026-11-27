@@ -117,7 +117,7 @@ del /q /f /s "c:\windows\twain_32\sample2\*.*"</Command>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>user32.lib;Comdlg32.lib;FreeImage.lib;qtmaind.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;Comdlg32.lib;winhttp.lib;FreeImage.lib;qtmaind.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName)32.ds</OutputFile>
       <AdditionalLibraryDirectories>..\..\pub\external\lib\win32;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>..\src\TWAINDS.def</ModuleDefinitionFile>
@@ -158,7 +158,7 @@ del /q /f /s "c:\windows\twain_64\sample2\*.*"</Command>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>User32.lib;Comdlg32.lib;FreeImage.lib;qtmaind.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>User32.lib;Comdlg32.lib;winhttp.lib;FreeImage.lib;qtmaind.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName)64.ds</OutputFile>
       <AdditionalLibraryDirectories>..\..\pub\external\lib\win64;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>..\src\TWAINDS.def</ModuleDefinitionFile>
@@ -193,7 +193,7 @@ del /q /f /s "c:\windows\twain_32\sample2\*.*"
       <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>User32.lib;Comdlg32.lib;FreeImage.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>User32.lib;Comdlg32.lib;winhttp.lib;FreeImage.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName)32.ds</OutputFile>
       <AdditionalLibraryDirectories>..\..\pub\external\lib\win32;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>..\src\TWAINDS.def</ModuleDefinitionFile>
@@ -230,7 +230,7 @@ del /q /f /s "c:\windows\twain_64\sample2\*.*"</Command>
       <WarningLevel>Level3</WarningLevel>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>User32.lib;Comdlg32.lib;FreeImage.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>User32.lib;Comdlg32.lib;winhttp.lib;FreeImage.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(ProjectName)64.ds</OutputFile>
       <AdditionalLibraryDirectories>..\..\pub\external\lib\win64;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>..\src\TWAINDS.def</ModuleDefinitionFile>
@@ -256,6 +256,7 @@ copy "$(ProjectDir)\..\..\pub\bin\TWAIN_logo.png" c:\windows\twain_64\sample2
   <ItemGroup>
     <ClCompile Include="..\..\common\CommonTWAIN.cpp" />
     <ClCompile Include="..\..\common\CTiffWriter.cpp" />
+    <ClCompile Include="..\src\CEsclClient.cpp" />
     <ClCompile Include="..\src\CommonDS.cpp" />
     <ClCompile Include="..\src\CPdfRenderer.cpp" />
     <ClCompile Include="..\src\CScanner_FreeImage.cpp" />
@@ -341,6 +342,7 @@ copy "$(ProjectDir)\..\..\pub\bin\TWAIN_logo.png" c:\windows\twain_64\sample2
     <ClInclude Include="..\..\common\Common.h" />
     <ClInclude Include="..\..\common\CommonTWAIN.h" />
     <ClInclude Include="..\..\common\CTiffWriter.h" />
+    <ClInclude Include="..\src\CEsclClient.h" />
     <ClInclude Include="..\src\CommonDS.h" />
     <ClInclude Include="..\src\CPdfRenderer.h" />
     <ClInclude Include="..\src\CScanner_FreeImage.h" />

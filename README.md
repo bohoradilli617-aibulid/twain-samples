@@ -7,9 +7,10 @@
 A **32-bit Windows TWAIN Data Source** (`TWAINDS_Sample32.ds`) that registers as **Windows Virtual Scanner** in 32-bit TWAIN applications and web-to-TWAIN scanner bridges, allowing you to scan existing PDF and image files instead of using physical hardware.
 
 - **Multi-File Picker UI:** Select and reorder multiple `.pdf`, `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tif`, and `.tiff` files.
+- **Network Scanner (eSCL / AirScan):** Pull live scans directly from eSCL/AirScan network MFPs (Flatbed, ADF Simplex, ADF Duplex; A4/A5/Letter/Full Glass) over HTTP/HTTPS into 32-bit TWAIN apps, with optional one-click **Auto-send**.
 - **PDF & Multi-Page TIFF Support:** Renders PDF pages at the selected DPI via 32-bit PDFium and reads multi-page TIFFs via FreeImage.
 - **Scan Controls:** Resolution (DPI), Color Mode (Color / Grayscale / Black & White), and Multi-Page Mode (All Pages, First Page Only, or Custom Page Range).
-- **Forced UI (`"force_ui": true`):** Opens the modal Qt file-picker dialog on top of desktop/browser windows even when the calling TWAIN host sends `ShowUI = FALSE`.
+- **Forced UI (`"force_ui": true`):** Opens the modal Qt dialog on top of desktop/browser windows even when the calling TWAIN host sends `ShowUI = FALSE`.
 
 ## Installation
 
@@ -31,8 +32,9 @@ Edit `C:\Windows\twain_32\sample2\source.json`:
 }
 ```
 
-- `force_ui`: When `true`, opens the file-picker dialog even if the host requests `ShowUI = FALSE`.
+- `force_ui`: When `true`, opens the dialog even if the host requests `ShowUI = FALSE`.
 - `folder`: Optional fallback image folder used when `ShowUI = FALSE` and `force_ui` is `false`.
+- `escl_url` / `escl_scanners` *(optional)*: Pre-populate network eSCL scanner URLs (or just type a scanner IP directly in the UI — recently used scanners and preferences are saved automatically in `%LOCALAPPDATA%\VirtualScanner\escl_settings.json`).
 
 Logs are written to `%LOCALAPPDATA%\VirtualScanner\scanner.log`.
 

@@ -5,6 +5,8 @@
 #include <QCloseEvent>
 #include <QCursor>
 #include <QHideEvent>
+#include <QLineEdit>
+#include <QMetaObject>
 #include <QShowEvent>
 #include <QStringList>
 #include <QTimer>
@@ -77,6 +79,8 @@ MainForm::MainForm(QT_UI *pUI, QWidget *parent)
   , m_pModalRequest(NULL)
   , m_bScanStarted(false)
   , m_bFirstShow(true)
+  , m_bEsclInitializing(false)
+  , m_bEsclScanning(false)
 {
   ui->setupUi(this);
   setWindowFlags((windowFlags() | Qt::Dialog | Qt::WindowStaysOnTopHint) & ~Qt::WindowContextHelpButtonHint);
@@ -87,6 +91,7 @@ MainForm::MainForm(QT_UI *pUI, QWidget *parent)
   }
 
   UpdateControls();
+  InitEsclControls();
   UpdateQueueSummary();
 }
 
@@ -97,16 +102,20 @@ MainForm::MainForm(ModalForceUIRequest *pModalRequest, QWidget *parent)
   , m_pModalRequest(pModalRequest)
   , m_bScanStarted(false)
   , m_bFirstShow(true)
+  , m_bEsclInitializing(false)
+  , m_bEsclScanning(false)
 {
   ui->setupUi(this);
   setWindowFlags((windowFlags() | Qt::Dialog | Qt::WindowStaysOnTopHint) & ~Qt::WindowContextHelpButtonHint);
 
   PopulateModalControls();
+  InitEsclControls();
   UpdateQueueSummary();
 }
 
 MainForm::~MainForm()
 {
+  StopEsclWorker();
   delete ui;
 }
 
@@ -395,14 +404,20 @@ bool MainForm::BuildQueuedPages(std::vector<ScanPageItem>& outPages, QString& ou
 void MainForm::UpdateQueueSummary()
 {
   bool hasFiles = !m_files.empty();
-  ui->pPushButton_MoveUp->setEnabled(hasFiles);
-  ui->pPushButton_MoveDown->setEnabled(hasFiles);
-  ui->pPushButton_RemoveFile->setEnabled(hasFiles);
-  ui->pPushButton_ClearFiles->setEnabled(hasFiles);
+  bool allowEdit = !m_bEsclScanning;
+  ui->pPushButton_MoveUp->setEnabled(hasFiles && allowEdit);
+  ui->pPushButton_MoveDown->setEnabled(hasFiles && allowEdit);
+  ui->pPushButton_RemoveFile->setEnabled(hasFiles && allowEdit);
+  ui->pPushButton_ClearFiles->setEnabled(hasFiles && allowEdit);
+
+  if (m_bEsclScanning)
+  {
+    return;
+  }
 
   if (!hasFiles)
   {
-    ui->pLabel_QueueSummary->setText("No files selected. Click \"Add Files...\" (or click Scan to pick files).");
+    ui->pLabel_QueueSummary->setText("No files selected. Click \"Add Files...\" or \"Scan from Network\".");
     return;
   }
 
@@ -430,6 +445,301 @@ void MainForm::UpdateQueueSummary()
         .arg(totalSourcePages)
         .arg(err));
   }
+}
+
+void MainForm::InitEsclControls()
+{
+  m_bEsclInitializing = true;
+  m_esclSettings = CEsclClient::loadSettings();
+
+  if (ui->pComboBox_EsclUrl->lineEdit())
+  {
+    ui->pComboBox_EsclUrl->lineEdit()->setPlaceholderText("e.g. 192.168.1.100 or http://192.168.1.100/eSCL");
+  }
+
+  RefreshEsclCombo();
+
+  int srcIdx = m_esclSettings.lastSource;
+  if (srcIdx < 0 || srcIdx >= ui->pComboBox_EsclSource->count())
+  {
+    srcIdx = 0;
+  }
+  ui->pComboBox_EsclSource->setCurrentIndex(srcIdx);
+
+  int paperIdx = m_esclSettings.lastPaper;
+  if (paperIdx < 0 || paperIdx >= ui->pComboBox_EsclPaper->count())
+  {
+    paperIdx = 0;
+  }
+  ui->pComboBox_EsclPaper->setCurrentIndex(paperIdx);
+  ui->pCheckBox_EsclAutoSend->setChecked(m_esclSettings.autoSend);
+
+  if (m_pUI && m_pUI->m_bSetup)
+  {
+    ui->pGroupBox_Escl->setEnabled(false);
+  }
+
+  m_bEsclInitializing = false;
+}
+
+void MainForm::RefreshEsclCombo()
+{
+  bool prevInit = m_bEsclInitializing;
+  m_bEsclInitializing = true;
+
+  ui->pComboBox_EsclUrl->clear();
+  for (size_t i = 0; i < m_esclSettings.scanners.size(); ++i)
+  {
+    const EsclScannerEntry& entry = m_esclSettings.scanners[i];
+    QString url = QString::fromStdString(entry.url);
+    QString label = entry.name.empty()
+      ? url
+      : QString("%1 - %2").arg(QString::fromStdString(entry.name), url);
+    ui->pComboBox_EsclUrl->addItem(label, url);
+  }
+
+  if (ui->pComboBox_EsclUrl->count() > 0)
+  {
+    ui->pComboBox_EsclUrl->setCurrentIndex(0);
+  }
+  else
+  {
+    ui->pComboBox_EsclUrl->setEditText(QString());
+  }
+
+  m_bEsclInitializing = prevInit;
+}
+
+std::string MainForm::GetSelectedEsclTarget() const
+{
+  QString text = ui->pComboBox_EsclUrl->currentText().trimmed();
+  if (text.isEmpty())
+  {
+    return std::string();
+  }
+
+  for (int i = 0; i < ui->pComboBox_EsclUrl->count(); ++i)
+  {
+    if (ui->pComboBox_EsclUrl->itemText(i) == text)
+    {
+      QString storedUrl = ui->pComboBox_EsclUrl->itemData(i).toString().trimmed();
+      if (!storedUrl.isEmpty())
+      {
+        return storedUrl.toStdString();
+      }
+    }
+  }
+
+  int httpIdx = text.indexOf(" - http://", 0, Qt::CaseInsensitive);
+  if (httpIdx >= 0)
+  {
+    return text.mid(httpIdx + 3).trimmed().toStdString();
+  }
+  int httpsIdx = text.indexOf(" - https://", 0, Qt::CaseInsensitive);
+  if (httpsIdx >= 0)
+  {
+    return text.mid(httpsIdx + 3).trimmed().toStdString();
+  }
+
+  return text.toStdString();
+}
+
+void MainForm::SetEsclScanningUiState(bool scanning)
+{
+  m_bEsclScanning = scanning;
+  bool enabled = !scanning;
+
+  ui->pPushButton_AddFiles->setEnabled(enabled);
+  ui->pListWidget_Files->setEnabled(enabled);
+  ui->pComboBox_EsclUrl->setEnabled(enabled);
+  ui->pComboBox_EsclSource->setEnabled(enabled);
+  ui->pComboBox_EsclPaper->setEnabled(enabled);
+  ui->pCheckBox_EsclAutoSend->setEnabled(enabled);
+  ui->pPushButton_EsclScan->setEnabled(enabled);
+  ui->pGroupBox_ScanSettings->setEnabled(enabled);
+  ui->pPushButton_Scan->setEnabled(enabled);
+
+  ui->pPushButton_EsclScan->setText(scanning ? "Scanning..." : "Scan from Network");
+  ui->pPushButton_Cancel->setText(scanning ? "Cancel Scan" : "Cancel");
+  ui->pPushButton_Cancel->setEnabled(true);
+
+  if (scanning)
+  {
+    setCursor(Qt::WaitCursor);
+  }
+  else
+  {
+    unsetCursor();
+  }
+
+  UpdateQueueSummary();
+}
+
+void MainForm::StopEsclWorker()
+{
+  if (m_esclCancel)
+  {
+    m_esclCancel->cancel();
+  }
+  if (m_esclThread.joinable())
+  {
+    m_esclThread.join();
+  }
+  m_esclCancel.reset();
+  m_bEsclScanning = false;
+}
+
+void MainForm::HandleEsclScanFinished(const EsclScanResult& result)
+{
+  if (m_esclThread.joinable())
+  {
+    m_esclThread.join();
+  }
+  m_esclCancel.reset();
+  SetEsclScanningUiState(false);
+
+  if (result.cancelled)
+  {
+    ui->pLabel_QueueSummary->setText("Network scan cancelled.");
+    BringDialogToFront();
+    return;
+  }
+
+  if (!result.ok)
+  {
+    UpdateQueueSummary();
+    QMessageBox::warning(this, "Virtual Scanner", QString::fromStdString(result.error));
+    BringDialogToFront();
+    return;
+  }
+
+  CEsclClient::upsertScanner(m_esclSettings, result.makeAndModel, result.resolvedUrl);
+  CEsclClient::saveSettings(m_esclSettings);
+  RefreshEsclCombo();
+
+  bool addedAny = false;
+  for (size_t i = 0; i < result.savedFiles.size(); ++i)
+  {
+    bool isPdf = false;
+    bool isMultiTiff = false;
+    int pageCount = CScanner_FreeImage::getFilePageCount(result.savedFiles[i], isPdf, isMultiTiff);
+    if (pageCount <= 0)
+    {
+      continue;
+    }
+
+    SelectedFileEntry entry;
+    entry.filePath    = result.savedFiles[i];
+    entry.pageCount   = pageCount;
+    entry.isPdf       = isPdf;
+    entry.isMultiTiff = isMultiTiff;
+    m_files.push_back(entry);
+    addedAny = true;
+  }
+
+  RefreshFileList();
+
+  if (!addedAny)
+  {
+    QMessageBox::warning(this, "Virtual Scanner", "The scanned image could not be loaded.");
+    BringDialogToFront();
+    return;
+  }
+
+  if (ui->pCheckBox_EsclAutoSend->isChecked())
+  {
+    on_pPushButton_Scan_clicked(false);
+  }
+  else
+  {
+    BringDialogToFront();
+  }
+}
+
+void MainForm::on_pPushButton_EsclScan_clicked(bool _bChecked)
+{
+  (void)_bChecked;
+  if (m_bEsclScanning)
+  {
+    return;
+  }
+
+  std::string target = GetSelectedEsclTarget();
+  if (target.empty())
+  {
+    QMessageBox::warning(this, "Virtual Scanner",
+                         "Enter a scanner IP address or eSCL URL (e.g. 192.168.1.100).");
+    ui->pComboBox_EsclUrl->setFocus();
+    return;
+  }
+
+  EsclScanRequest req;
+  req.target = target;
+  req.source = (EsclInputSource)ui->pComboBox_EsclSource->currentIndex();
+  req.paper  = (EsclPaperSize)ui->pComboBox_EsclPaper->currentIndex();
+  req.dpi    = (ui->pComboBox_Resolution->currentIndex() >= 0)
+    ? ui->pComboBox_Resolution->currentData().toInt()
+    : 200;
+  req.pixelType = (ui->pComboBox_ColorMode->currentIndex() >= 0)
+    ? ui->pComboBox_ColorMode->currentData().toInt()
+    : TWPT_RGB;
+
+  if (m_esclThread.joinable())
+  {
+    m_esclThread.join();
+  }
+
+  std::shared_ptr<EsclCancelToken> cancelToken = std::make_shared<EsclCancelToken>();
+  m_esclCancel = cancelToken;
+
+  SetEsclScanningUiState(true);
+  ui->pLabel_QueueSummary->setText(QString("Connecting to %1...").arg(QString::fromStdString(target)));
+
+  m_esclThread = std::thread([this, req, cancelToken]() {
+    EsclScanResult result = CEsclClient::scan(req, cancelToken, [this](const std::string& msg) {
+      QString qMsg = QString::fromStdString(msg);
+      QMetaObject::invokeMethod(this, [this, qMsg]() {
+        if (m_bEsclScanning)
+        {
+          ui->pLabel_QueueSummary->setText(qMsg);
+        }
+      }, Qt::QueuedConnection);
+    });
+
+    QMetaObject::invokeMethod(this, [this, result]() {
+      HandleEsclScanFinished(result);
+    }, Qt::QueuedConnection);
+  });
+}
+
+void MainForm::on_pComboBox_EsclSource_currentIndexChanged(int _nIndex)
+{
+  if (m_bEsclInitializing || _nIndex < 0)
+  {
+    return;
+  }
+  m_esclSettings.lastSource = _nIndex;
+  CEsclClient::saveSettings(m_esclSettings);
+}
+
+void MainForm::on_pComboBox_EsclPaper_currentIndexChanged(int _nIndex)
+{
+  if (m_bEsclInitializing || _nIndex < 0)
+  {
+    return;
+  }
+  m_esclSettings.lastPaper = _nIndex;
+  CEsclClient::saveSettings(m_esclSettings);
+}
+
+void MainForm::on_pCheckBox_EsclAutoSend_toggled(bool _bChecked)
+{
+  if (m_bEsclInitializing)
+  {
+    return;
+  }
+  m_esclSettings.autoSend = _bChecked;
+  CEsclClient::saveSettings(m_esclSettings);
 }
 
 void MainForm::on_pPushButton_AddFiles_clicked(bool _bChecked)
@@ -534,6 +844,11 @@ void MainForm::on_pLineEdit_PageRange_textChanged(const QString &text)
 void MainForm::on_pPushButton_Scan_clicked(bool _bChecked)
 {
   (void)_bChecked;
+  if (m_bEsclScanning)
+  {
+    return;
+  }
+
   if (!m_pModalRequest && m_pUI && m_pUI->m_bSetup)
   {
     m_bScanStarted = true;
@@ -586,6 +901,7 @@ void MainForm::on_pPushButton_Scan_clicked(bool _bChecked)
   m_bScanStarted = true;
   ui->pPushButton_Scan->setEnabled(false);
   ui->pPushButton_AddFiles->setEnabled(false);
+  ui->pPushButton_EsclScan->setEnabled(false);
   m_pUI->Scan();
 
   if (!m_pUI->m_bScanning)
@@ -593,6 +909,7 @@ void MainForm::on_pPushButton_Scan_clicked(bool _bChecked)
     m_bScanStarted = false;
     ui->pPushButton_Scan->setEnabled(true);
     ui->pPushButton_AddFiles->setEnabled(true);
+    ui->pPushButton_EsclScan->setEnabled(true);
     QMessageBox::warning(this, "Virtual Scanner", "Failed to prepare the selected page for scanning.");
   }
 }
@@ -600,6 +917,17 @@ void MainForm::on_pPushButton_Scan_clicked(bool _bChecked)
 void MainForm::on_pPushButton_Cancel_clicked(bool _bChecked)
 {
   (void)_bChecked;
+  if (m_bEsclScanning)
+  {
+    if (m_esclCancel)
+    {
+      m_esclCancel->cancel();
+    }
+    ui->pLabel_QueueSummary->setText("Cancelling network scan...");
+    ui->pPushButton_Cancel->setEnabled(false);
+    return;
+  }
+
   if (m_pModalRequest)
   {
     m_pModalRequest->accepted = false;
@@ -612,6 +940,8 @@ void MainForm::on_pPushButton_Cancel_clicked(bool _bChecked)
 
 void MainForm::closeEvent(QCloseEvent *evClose)
 {
+  StopEsclWorker();
+
   if (m_pModalRequest)
   {
     if (!m_bScanStarted)

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>500</width>
-    <height>460</height>
+    <width>540</width>
+    <height>560</height>
    </rect>
   </property>
   <property name="contextMenuPolicy">
@@ -32,7 +32,7 @@
         <property name="minimumSize">
          <size>
           <width>0</width>
-          <height>150</height>
+          <height>125</height>
          </size>
         </property>
         <property name="selectionMode">
@@ -82,9 +82,132 @@
       <item>
        <widget class="QLabel" name="pLabel_QueueSummary">
         <property name="text">
-         <string>No files selected. Click "Add Files..." (or click Scan to pick files).</string>
+         <string>No files selected. Click "Add Files..." or "Scan from Network".</string>
         </property>
        </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="pGroupBox_Escl">
+     <property name="title">
+      <string>Network Scanner (eSCL / AirScan)</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_Escl">
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_EsclUrl">
+        <item>
+         <widget class="QLabel" name="pLabel_EsclUrl">
+          <property name="text">
+           <string>Scanner IP / URL:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="pComboBox_EsclUrl">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>1</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="editable">
+           <bool>true</bool>
+          </property>
+          <property name="insertPolicy">
+           <enum>QComboBox::NoInsert</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pPushButton_EsclScan">
+          <property name="minimumSize">
+           <size>
+            <width>135</width>
+            <height>26</height>
+           </size>
+          </property>
+          <property name="text">
+           <string>Scan from Network</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_EsclOptions">
+        <item>
+         <widget class="QLabel" name="pLabel_EsclSource">
+          <property name="text">
+           <string>Source:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="pComboBox_EsclSource">
+          <item>
+           <property name="text">
+            <string>Flatbed (Glass)</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>ADF (Simplex)</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>ADF (Duplex)</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="pLabel_EsclPaper">
+          <property name="text">
+           <string>Paper:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="pComboBox_EsclPaper">
+          <item>
+           <property name="text">
+            <string>A4</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>A5</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Letter</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Full Glass</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="pCheckBox_EsclAutoSend">
+          <property name="toolTip">
+           <string>Immediately send scanned page(s) to the application after scanning.</string>
+          </property>
+          <property name="text">
+           <string>Auto-send</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>
