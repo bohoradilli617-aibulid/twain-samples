@@ -5,13 +5,13 @@
 #include <QCloseEvent>
 #include <QCursor>
 #include <QHideEvent>
-#include <QLineEdit>
 #include <QMetaObject>
 #include <QShowEvent>
 #include <QStringList>
 #include <QTimer>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
+#include <QtWidgets/QLineEdit>
 #include <QtWidgets/QListWidgetItem>
 #include <QtWidgets/QMessageBox>
 #include <algorithm>
